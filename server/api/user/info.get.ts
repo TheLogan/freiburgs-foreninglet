@@ -1,4 +1,4 @@
-import { fetchMemberActivities } from '../../utils/bifrost'
+import { fetchUserEvents, fetchUserInfo } from '../../utils/bifrost'
 import { getSessionJar, getSessionUser } from '../../utils/session'
 
 export default defineEventHandler(async (event) => {
@@ -9,6 +9,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Not authenticated.' })
   }
 
-  const activities = await fetchMemberActivities(jar)
-  return { activities }
+  const userInfo = await fetchUserInfo(jar);
+  return { userInfo }
 })

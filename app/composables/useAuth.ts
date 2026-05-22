@@ -30,7 +30,8 @@ export function useAuth() {
     await $fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
     user.value = null
     sessionLoaded.value = false
-    useData().clearMemberships()
+    useUserEvents().clearUserEvents()
+    useUserInfo().clearUserInfo()
     await navigateTo('/')
   }
 

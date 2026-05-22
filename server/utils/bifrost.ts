@@ -1,4 +1,4 @@
-import type { Activity } from '#shared/types/activity'
+import type { UserEvent } from '#shared/types/activity'
 import {
   BASE_URL,
   DEFAULT_CLUB_ID,
@@ -7,8 +7,10 @@ import {
   FRONTPAGE_URL,
   LOGIN_URL,
   LOOKUP_URL,
+  PROFILE_URL,
 } from '#shared/constants/foreninglet'
-import { parseEnrolledActivities } from './bifrost-parse'
+import { parseEnrolledEvents as parseEnrolledEvents, parseUserInfo } from './bifrost-parse'
+import { UserInfo } from '~~/shared/types/userInfo'
 
 export interface LookupMember {
   member_id: string
@@ -335,7 +337,7 @@ export async function verifyBifrostSession(jar: CookieJar): Promise<boolean> {
   return ok
 }
 
-export async function fetchMemberActivities(jar: CookieJar): Promise<Activity[]> {
+export async function fetchUserEvents(jar: CookieJar): Promise<UserEvent[]> {
   const { status, text } = await bifrostFetch(EVENTS_URL, jar, {
     headers: {
       ...DEFAULT_HEADERS,
@@ -355,5 +357,28 @@ export async function fetchMemberActivities(jar: CookieJar): Promise<Activity[]>
     })
   }
 
-  return parseEnrolledActivities(text)
+  return parseEnrolledEvents(text)
+}
+
+export async function fetchUserInfo(jar: CookieJar): Promise<UserInfo> {
+  const { status, text } = await bifrostFetch(PROFILE_URL, jar, {
+    headers: {
+      ...DEFAULT_HEADERS,
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      Referer: FRONTPAGE_URL,
+    },
+  })
+
+  if (status === 401 || status === 403) {
+    throw createError({ statusCode: 401, statusMessage: 'Session expired.' })
+  }
+
+  if (status < 200 || status >= 400) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: `Bifrost request failed (${status}).`,
+    })
+  }
+
+  return parseUserInfo(text)
 }
