@@ -5,8 +5,13 @@ export function getFetchErrorMessage(
   fallback = 'Something went wrong.',
 ): string {
   if (error && typeof error === 'object' && 'data' in error) {
-    const err = error as FetchError<{ message?: string }>
-    return err.data?.message ?? err.statusMessage ?? fallback
+    const err = error as FetchError<{ message?: string; statusMessage?: string }>
+    return (
+      err.data?.statusMessage
+      ?? err.data?.message
+      ?? err.statusMessage
+      ?? fallback
+    )
   }
   if (error instanceof Error) {
     return error.message

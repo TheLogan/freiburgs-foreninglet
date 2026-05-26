@@ -32,6 +32,7 @@ export function useAuth() {
     sessionLoaded.value = false
     useUserEvents().clearUserEvents()
     useUserInfo().clearUserInfo()
+    useUpcomingEvents().clearUpcomingEvents()
     await navigateTo('/')
   }
 

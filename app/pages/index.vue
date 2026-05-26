@@ -29,5 +29,11 @@ const { isAuthed } = useAuth()
         <UserEvents />
       </v-col>
     </v-row>
+
+    <v-row class="mt-4">
+      <v-col cols="12">
+        <UpcomingEvents />
+      </v-col>
+    </v-row>
   </v-container>
 </template>
