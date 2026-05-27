@@ -1,4 +1,6 @@
 import type {
+  PaymentCheckout,
+  PaymentCheckoutResponse,
   PostCommentResponse,
   SubscribeForm,
 } from '#shared/types/subscribe'
@@ -63,6 +65,15 @@ export function useEventSubscribe() {
   )
   const deletingCommentHref = useState<string | null>(
     'subscribe-deleting-comment-href',
+    () => null,
+  )
+  const checkout = useState<PaymentCheckout | null>('subscribe-checkout', () => null)
+  const checkoutLoading = useState<boolean>(
+    'subscribe-checkout-loading',
+    () => false,
+  )
+  const checkoutError = useState<string | null>(
+    'subscribe-checkout-error',
     () => null,
   )
 
@@ -181,6 +192,35 @@ export function useEventSubscribe() {
     }
   }
 
+  async function loadPaymentCheckout(activityId: string, slot?: string) {
+    checkoutLoading.value = true
+    checkoutError.value = null
+
+    try {
+      const query = slot ? { slot } : undefined
+      const data = await $fetch<PaymentCheckoutResponse>(
+        `/api/events/${activityId}/subscribe/checkout`,
+        { query },
+      )
+      checkout.value = data.checkout
+      return true
+    } catch (e) {
+      checkout.value = null
+      checkoutError.value = getFetchErrorMessage(
+        e,
+        'Could not load payment checkout.',
+      )
+      return false
+    } finally {
+      checkoutLoading.value = false
+    }
+  }
+
+  function clearCheckout() {
+    checkout.value = null
+    checkoutError.value = null
+  }
+
   function resetSubscribe() {
     form.value = null
     status.value = 'idle'
@@ -190,6 +230,9 @@ export function useEventSubscribe() {
     pendingCommentText.value = null
     deletingComment.value = false
     deletingCommentHref.value = null
+    checkout.value = null
+    checkoutLoading.value = false
+    checkoutError.value = null
   }
 
   return {
@@ -201,9 +244,14 @@ export function useEventSubscribe() {
     commentPending,
     error,
     successMessage,
+    checkout,
+    checkoutLoading,
+    checkoutError,
     loadSubscribeForm,
     postComment,
     followSubscribeLink,
+    loadPaymentCheckout,
+    clearCheckout,
     resetSubscribe,
   }
 }

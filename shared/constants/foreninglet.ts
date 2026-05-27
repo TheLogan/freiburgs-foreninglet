@@ -14,5 +14,10 @@ export function subscribeIndexUrl(activityId: string): string {
   return `${BASE_URL}/memberportal/subscribe/index/${activityId}`
 }
 
+/** Payment checkout after sign-up; trailing slot is the price/option index (usually 0). */
+export function subscribeIdentifyUrl(activityId: string, slot = '0'): string {
+  return `${BASE_URL}/memberportal/subscribe/identify/${activityId}/${slot}`
+}
+
 // AUTOMATIC_PAYMENT_URL = f"{BASE_URL}/memberportal/recurring"
 // MEMBER_URLS = [f"{BASE_URL}/memberportal/subscribe/index/97990", f"{BASE_URL}/memberportal/subscribe/index/97991"]

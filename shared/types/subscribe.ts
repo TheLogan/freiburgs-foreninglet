@@ -58,3 +58,25 @@ export interface PostCommentResponse {
   /** True when the comment was accepted but not yet visible in the HTML feed */
   commentPending?: boolean
 }
+
+export interface PaymentLineItem {
+  text: string
+  amount: string
+}
+
+export interface PaymentCheckout {
+  pageTitle?: string
+  memberName?: string
+  invoiceNumber?: string
+  lineItems: PaymentLineItem[]
+  total?: string
+  noticeHtml?: string
+  termsHtml?: string
+  paymentUrl: string
+  acceptTermsLabel?: string
+  conditionsErrorMessage?: string
+}
+
+export interface PaymentCheckoutResponse {
+  checkout: PaymentCheckout
+}

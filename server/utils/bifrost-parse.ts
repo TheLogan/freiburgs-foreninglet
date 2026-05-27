@@ -3,6 +3,8 @@ import type { UserEvent } from "#shared/types/userEvents";
 import type { UserInfo } from "#shared/types/userInfo";
 import { UpcomingEvent } from "~~/shared/types/event";
 import type {
+  PaymentCheckout,
+  PaymentLineItem,
   SubscribeFieldOption,
   SubscribeFieldType,
   SubscribeForm,
@@ -19,6 +21,8 @@ export function isBifrostLoginPage(html: string): boolean {
     "subscription-form",
     "subscribe-form",
     "subscribe/index/",
+    "flte_payment_form",
+    "payment.quickpay.net",
     "member-form",
     "activity-entry",
     "enrolled-activities-table",
@@ -716,5 +720,163 @@ export function parseCommentPostResult(html: string): { success: boolean; messag
   return {
     success: true,
     message: successText || "Comment posted.",
+  };
+}
+
+const IDENTIFY_PATH_RE = /\/subscribe\/identify\/(\d+)\/(\d+)/g;
+
+export function parseIdentifySlotFromHtml(
+  html: string,
+  activityId: string,
+): string | undefined {
+  const pattern = new RegExp(
+    `/subscribe/identify/${activityId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(\\d+)`,
+  );
+  return html.match(pattern)?.[1];
+}
+
+export function listIdentifySlotsFromHtml(html: string): string[] {
+  const slots = new Set<string>();
+  for (const match of html.matchAll(IDENTIFY_PATH_RE)) {
+    if (match[2] !== undefined) slots.add(match[2]);
+  }
+  return [...slots].sort((a, b) => Number(a) - Number(b));
+}
+
+export function htmlHasPaymentCheckout(html: string): boolean {
+  const lower = html.toLowerCase();
+  return lower.includes("flte_payment_form") || lower.includes("payment.quickpay.net");
+}
+
+export function parsePaymentCheckout(html: string, pageUrl: string): PaymentCheckout {
+  if (isBifrostLoginPage(html)) {
+    throw createError({ statusCode: 401, statusMessage: "Session expired." });
+  }
+
+  const $ = cheerio.load(html);
+  const $paymentForm = $("#flte_payment_form");
+
+  if (!$paymentForm.length) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: "Payment checkout not found on Foreninglet page.",
+    });
+  }
+
+  const $panel = $paymentForm.closest(".panel, .card").first();
+  const $body = $panel.find(".panel-body, .card-body").first();
+
+  const pageTitle =
+    $panel.find(".panel-title, .card-header").first().text().replace(/\s+/g, " ").trim()
+    || undefined;
+
+  const memberName =
+    $body.find("h4").first().text().replace(/\s+/g, " ").trim() || undefined;
+
+  const invoiceHeading = $body
+    .find("h6")
+    .filter((_, el) => /fakturanr/i.test($(el).text()))
+    .first()
+    .text()
+    .replace(/\s+/g, " ")
+    .trim();
+  const invoiceNumber = invoiceHeading
+    ? invoiceHeading.replace(/^.*fakturanr\.?\s*:?\s*/i, "").trim()
+    : undefined;
+
+  const lineItems: PaymentLineItem[] = [];
+  let total: string | undefined;
+
+  $body.find("table tbody tr").each((_, row) => {
+    const cells = $(row)
+      .find("td")
+      .map((__, cell) => $(cell).text().replace(/\s+/g, " ").trim())
+      .get();
+    if (cells.length < 2) return;
+
+    const text = cells[0] ?? "";
+    const amount = cells[cells.length - 1] ?? "";
+    if (/^total$/i.test(text.replace(/<[^>]+>/g, "").trim()) || /<b>\s*total\s*<\/b>/i.test($(row).html() ?? "")) {
+      total = amount;
+      return;
+    }
+    if (text && amount) {
+      lineItems.push({ text, amount });
+    }
+  });
+
+  const paymentAction = $paymentForm.attr("action")?.trim();
+  if (!paymentAction) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: "QuickPay payment URL not found.",
+    });
+  }
+
+  const acceptTermsLabel = $paymentForm
+    .find('input[type="checkbox"]')
+    .first()
+    .parent()
+    .text()
+    .replace(/\s+/g, " ")
+    .trim() || undefined;
+
+  const conditionsErrorMessage =
+    $("#conditions-span")
+      .find("p")
+      .first()
+      .text()
+      .replace(/\s+/g, " ")
+      .trim()
+    || undefined;
+
+  let noticeHtml: string | undefined;
+  const $table = $body.find("table").first();
+  if ($table.length) {
+    const noticeParts: string[] = [];
+    let capture = false;
+    for (const node of $body[0]?.children ?? []) {
+      const $node = $(node);
+      if ($node.is("table") && $node.is($table)) {
+        capture = true;
+        continue;
+      }
+      if (!capture) continue;
+      if ($node.is("#flte_payment_form") || $node.find("#flte_payment_form").length) break;
+      if ($node.is("h4") && /handelsbetingelser/i.test($node.text())) break;
+      const htmlChunk = $.html($node).trim();
+      if (htmlChunk) noticeParts.push(htmlChunk);
+    }
+    if (noticeParts.length) {
+      noticeHtml = noticeParts.join("");
+    }
+  }
+
+  let termsHtml: string | undefined;
+  const $termsHeading = $body
+    .find("h4")
+    .filter((_, el) => /handelsbetingelser/i.test($(el).text()))
+    .first();
+  if ($termsHeading.length) {
+    const termsParts: string[] = [];
+    let $cursor = $termsHeading.next();
+    while ($cursor.length && !$cursor.is("form")) {
+      termsParts.push($.html($cursor));
+      $cursor = $cursor.next();
+    }
+    termsHtml = termsParts.join("").trim() || undefined;
+  }
+
+  return {
+    pageTitle,
+    memberName,
+    invoiceNumber,
+    lineItems,
+    total,
+    noticeHtml,
+    termsHtml,
+    paymentUrl: resolveUrl(paymentAction, pageUrl),
+    acceptTermsLabel,
+    conditionsErrorMessage,
   };
 }

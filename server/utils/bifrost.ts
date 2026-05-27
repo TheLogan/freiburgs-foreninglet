@@ -10,12 +10,15 @@ import {
   LOOKUP_URL,
   PROFILE_URL,
 } from "#shared/constants/foreninglet";
-import type { SubscribeForm } from "#shared/types/subscribe";
-import { subscribeIndexUrl } from "#shared/constants/foreninglet";
+import type { PaymentCheckout, SubscribeForm } from "#shared/types/subscribe";
+import { subscribeIdentifyUrl, subscribeIndexUrl } from "#shared/constants/foreninglet";
 import {
+  htmlHasPaymentCheckout,
   htmlHasSubscribeForm,
   isBifrostLoginPage,
   parseEnrolledEvents as parseEnrolledEvents,
+  parseIdentifySlotFromHtml,
+  parsePaymentCheckout,
   parseSubscribeForm,
   parseCommentPostResult,
   parseUpcomingEvents,
@@ -534,6 +537,72 @@ function isRetryableSubscribeError(error: unknown): boolean {
     && "statusCode" in error
     && (error as { statusCode: number }).statusCode === 502
   );
+}
+
+export async function fetchPaymentCheckout(
+  jar: CookieJar,
+  activityId: string,
+  options?: { slot?: string; referer?: string },
+): Promise<PaymentCheckout> {
+  let slot = options?.slot?.trim() || "0";
+
+  if (!options?.slot) {
+    try {
+      const indexUrl = subscribeIndexUrl(activityId);
+      const { text: indexHtml } = await bifrostFetch(indexUrl, jar, {
+        headers: {
+          ...DEFAULT_HEADERS,
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          Referer: options?.referer ?? ALL_AVAILABLE_EVENTS_URL,
+        },
+      });
+      const parsedSlot = parseIdentifySlotFromHtml(indexHtml, activityId);
+      if (parsedSlot) slot = parsedSlot;
+    } catch {
+      // Fall back to default slot when index page cannot be loaded.
+    }
+  }
+
+  const pageUrl = subscribeIdentifyUrl(activityId, slot);
+  const referer = options?.referer ?? subscribeIndexUrl(activityId);
+
+  const { status, text } = await bifrostFetch(pageUrl, jar, {
+    headers: {
+      ...DEFAULT_HEADERS,
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      Referer: referer,
+    },
+  });
+
+  if (status === 401 || status === 403 || isBifrostLoginPage(text)) {
+    throw createError({ statusCode: 401, statusMessage: "Session expired." });
+  }
+
+  if (status < 200 || status >= 400) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: `Could not load payment page (${status}).`,
+    });
+  }
+
+  if (!htmlHasPaymentCheckout(text)) {
+    if (htmlHasSubscribeForm(text)) {
+      throw createError({
+        statusCode: 422,
+        statusMessage:
+          "Complete the sign-up form on Foreninglet before payment.",
+        data: { code: "needs_signup_form" },
+      });
+    }
+    throw createError({
+      statusCode: 502,
+      statusMessage: "Payment checkout not found on Foreninglet page.",
+    });
+  }
+
+  return parsePaymentCheckout(text, pageUrl);
 }
 
 export async function fetchSubscribeForm(

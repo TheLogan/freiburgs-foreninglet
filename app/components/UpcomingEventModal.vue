@@ -22,15 +22,35 @@ const {
   commentPending,
   error,
   successMessage,
+  checkout,
+  checkoutLoading,
+  checkoutError,
   loadSubscribeForm,
   postComment,
   followSubscribeLink,
+  loadPaymentCheckout,
+  clearCheckout,
   resetSubscribe,
 } = useEventSubscribe()
 
 const formValues = ref<Record<string, string>>({})
 const subscribeContentRef = ref<HTMLElement | null>(null)
 const commentsHtmlRef = ref<HTMLElement | null>(null)
+const acceptedTerms = ref(false)
+const showTermsError = ref(false)
+const isCheckoutStep = computed(() => checkout.value !== null)
+
+const acceptTermsLabel = computed(
+  () =>
+    checkout.value?.acceptTermsLabel?.trim()
+    || 'Jeg accepterer handelsbetingelser',
+)
+
+const conditionsErrorText = computed(
+  () =>
+    checkout.value?.conditionsErrorMessage?.trim()
+    || 'Du skal godkende betingelserne for at komme videre',
+)
 
 const hasSubscribeContent = computed(
   () =>
@@ -101,6 +121,36 @@ async function refreshComments() {
   if (!props.event?.id || loading.value || postingComment.value) return
   await loadSubscribeForm(props.event.id)
 }
+
+async function handleSubscribe() {
+  if (!props.event?.id || props.event.status !== 'available') return
+  const ok = await loadPaymentCheckout(props.event.id)
+  if (ok) {
+    acceptedTerms.value = false
+    showTermsError.value = false
+  }
+}
+
+function backToDetails() {
+  clearCheckout()
+  acceptedTerms.value = false
+  showTermsError.value = false
+}
+
+function continueToPayment() {
+  if (!acceptedTerms.value) {
+    showTermsError.value = true
+    return
+  }
+  const url = checkout.value?.paymentUrl
+  if (url) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+}
+
+watch(acceptedTerms, (checked) => {
+  if (checked) showTermsError.value = false
+})
 
 function isDeleteCommentAction(anchor: HTMLAnchorElement, href: string): boolean {
   const label = anchor.textContent?.replace(/\s+/g, ' ').trim() ?? ''
@@ -192,6 +242,8 @@ watch(
     if (!open) {
       resetSubscribe()
       formValues.value = {}
+      acceptedTerms.value = false
+      showTermsError.value = false
       return
     }
     if (props.event?.id) {
@@ -237,77 +289,184 @@ watch(
       <v-divider />
 
       <v-card-text class="pt-4">
-        <div class="mb-4">
+        <template v-if="isCheckoutStep && checkout">
+          <div class="text-h6 mb-1">
+            {{ checkout.pageTitle || event.name }}
+          </div>
           <div
-            v-if="displayDates(event)"
-            class="text-body-2 text-medium-emphasis"
+            v-if="checkout.memberName"
+            class="text-subtitle-1 mb-1"
           >
-            {{ displayDates(event) }}
+            {{ checkout.memberName }}
           </div>
-          <div class="d-flex flex-wrap ga-2 mt-2">
-            <v-chip
-              v-if="event.location"
-              size="small"
-              variant="tonal"
-              prepend-icon="mdi-map-marker-outline"
-            >
-              {{ event.location }}
-            </v-chip>
-            <v-chip
-              v-if="event.price"
-              size="small"
-              variant="tonal"
-              prepend-icon="mdi-currency-usd"
-            >
-              {{ event.price }}
-            </v-chip>
-            <v-chip
-              v-if="event.seats"
-              size="small"
-              variant="tonal"
-            >
-              {{ event.seats }}
-            </v-chip>
+          <div
+            v-if="checkout.invoiceNumber"
+            class="text-caption text-medium-emphasis mb-4"
+          >
+            Fakturanr.: {{ checkout.invoiceNumber }}
           </div>
-        </div>
 
-        <v-skeleton-loader
-          v-if="loading && !form"
-          type="article, paragraph@3"
-        />
+          <v-table
+            v-if="checkout.lineItems.length"
+            density="compact"
+            class="checkout-table mb-4"
+          >
+            <thead>
+              <tr>
+                <th class="text-left">
+                  Tekst
+                </th>
+                <th class="text-right">
+                  Total
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(row, index) in checkout.lineItems"
+                :key="index"
+              >
+                <td>{{ row.text }}</td>
+                <td class="text-right">
+                  {{ row.amount }}
+                </td>
+              </tr>
+              <tr v-if="checkout.total">
+                <td class="font-weight-bold">
+                  Total
+                </td>
+                <td class="text-right font-weight-bold">
+                  {{ checkout.total }}
+                </td>
+              </tr>
+            </tbody>
+          </v-table>
 
-        <v-alert
-          v-if="error && !loading"
-          type="error"
-          variant="tonal"
-          class="mb-4"
-          density="compact"
-          role="alert"
-        >
-          {{ error }}
-        </v-alert>
+          <div
+            v-if="checkout.noticeHtml"
+            class="text-body-2 checkout-notice mb-4"
+            v-html="checkout.noticeHtml"
+          />
 
-        <v-alert
-          v-if="successMessage && !loading"
-          type="success"
-          variant="tonal"
-          class="mb-4"
-          density="compact"
-        >
-          {{ successMessage }}
-        </v-alert>
+          <v-checkbox
+            v-model="acceptedTerms"
+            :label="acceptTermsLabel"
+            hide-details="auto"
+            class="mb-2"
+          />
 
-        <v-alert
-          v-if="postingComment"
-          type="info"
-          variant="tonal"
-          class="mb-4"
-          density="compact"
-        >
-          Posting comment and updating the list…
-        </v-alert>
+          <v-alert
+            v-if="showTermsError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+            role="alert"
+          >
+            {{ conditionsErrorText }}
+          </v-alert>
 
-        <template v-if="form">
+          <v-expansion-panels
+            v-if="checkout.termsHtml"
+            class="checkout-terms"
+          >
+            <v-expansion-panel>
+              <v-expansion-panel-title>
+                Handelsbetingelser
+              </v-expansion-panel-title>
+              <v-expansion-panel-text>
+                <div
+                  class="checkout-terms__body text-body-2"
+                  v-html="checkout.termsHtml"
+                />
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+          </v-expansion-panels>
+        </template>
+
+        <template v-else>
+          <div class="mb-4">
+            <div
+              v-if="displayDates(event)"
+              class="text-body-2 text-medium-emphasis"
+            >
+              {{ displayDates(event) }}
+            </div>
+            <div class="d-flex flex-wrap ga-2 mt-2">
+              <v-chip
+                v-if="event.location"
+                size="small"
+                variant="tonal"
+                prepend-icon="mdi-map-marker-outline"
+              >
+                {{ event.location }}
+              </v-chip>
+              <v-chip
+                v-if="event.price"
+                size="small"
+                variant="tonal"
+                prepend-icon="mdi-currency-usd"
+              >
+                {{ event.price }}
+              </v-chip>
+              <v-chip
+                v-if="event.seats"
+                size="small"
+                variant="tonal"
+              >
+                {{ event.seats }}
+              </v-chip>
+            </div>
+          </div>
+
+          <v-skeleton-loader
+            v-if="loading && !form"
+            type="article, paragraph@3"
+          />
+
+          <v-alert
+            v-if="error && !loading"
+            type="error"
+            variant="tonal"
+            class="mb-4"
+            density="compact"
+            role="alert"
+          >
+            {{ error }}
+          </v-alert>
+
+          <v-alert
+            v-if="checkoutError"
+            type="error"
+            variant="tonal"
+            class="mb-4"
+            density="compact"
+            role="alert"
+          >
+            {{ checkoutError }}
+          </v-alert>
+
+          <v-alert
+            v-if="successMessage && !loading"
+            type="success"
+            variant="tonal"
+            class="mb-4"
+            density="compact"
+          >
+            {{ successMessage }}
+          </v-alert>
+
+          <v-alert
+            v-if="postingComment"
+            type="info"
+            variant="tonal"
+            class="mb-4"
+            density="compact"
+          >
+            Posting comment and updating the list…
+          </v-alert>
+
+          <template v-if="form">
           <div
             v-if="hasSubscribeContent"
             ref="subscribeContentRef"
@@ -463,6 +622,7 @@ watch(
               {{ postingComment ? 'Posting…' : 'Post comment' }}
             </v-btn>
           </v-form>
+          </template>
         </template>
 
       </v-card-text>
@@ -472,9 +632,29 @@ watch(
       <v-card-actions class="pa-4">
         <v-btn
           variant="text"
-          @click="close"
+          :disabled="checkoutLoading"
+          @click="isCheckoutStep ? backToDetails() : close()"
         >
-          Close
+          {{ isCheckoutStep ? 'Back' : 'Close' }}
+        </v-btn>
+        <v-spacer />
+        <v-btn
+          v-if="isCheckoutStep"
+          color="primary"
+          variant="flat"
+          @click="continueToPayment"
+        >
+          Videre til betaling
+        </v-btn>
+        <v-btn
+          v-else-if="event.status === 'available'"
+          color="primary"
+          variant="flat"
+          :loading="checkoutLoading"
+          :disabled="loading || postingComment || checkoutLoading"
+          @click="handleSubscribe"
+        >
+          Subscribe
         </v-btn>
       </v-card-actions>
     </v-card>
@@ -655,5 +835,19 @@ watch(
 .subscribe-content--busy {
   opacity: 0.6;
   pointer-events: none;
+}
+
+.checkout-table :deep(th),
+.checkout-table :deep(td) {
+  border-bottom: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.checkout-notice :deep(strong) {
+  font-weight: 600;
+}
+
+.checkout-terms__body {
+  line-height: 1.5;
+  color: rgba(var(--v-theme-on-surface), 0.87);
 }
 </style>
