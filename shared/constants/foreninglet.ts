@@ -19,5 +19,5 @@ export function subscribeIdentifyUrl(activityId: string, slot = '0'): string {
   return `${BASE_URL}/memberportal/subscribe/identify/${activityId}/${slot}`
 }
 
-// AUTOMATIC_PAYMENT_URL = f"{BASE_URL}/memberportal/recurring"
+export const AUTOMATIC_PAYMENT_URL = `${BASE_URL}/memberportal/recurring`
 // MEMBER_URLS = [f"{BASE_URL}/memberportal/subscribe/index/97990", f"{BASE_URL}/memberportal/subscribe/index/97991"]

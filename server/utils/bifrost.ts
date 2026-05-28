@@ -1,6 +1,7 @@
 import type { UserEvent } from "#shared/types/userEvents";
 import {
   ALL_AVAILABLE_EVENTS_URL,
+  AUTOMATIC_PAYMENT_URL,
   BASE_URL,
   DEFAULT_CLUB_ID,
   DO_LOGIN_URL,
@@ -22,6 +23,7 @@ import {
   parseSubscribeForm,
   parseCommentPostResult,
   parseUpcomingEvents,
+  parseAutoPaymentStatus,
   parseUserInfo,
 } from "./bifrost-parse";
 import { UserInfo } from "~~/shared/types/userInfo";
@@ -414,6 +416,29 @@ export async function fetchUserInfo(jar: CookieJar): Promise<UserInfo> {
   }
 
   return parseUserInfo(text);
+}
+
+export async function fetchAutoPaymentStatus(jar: CookieJar): Promise<boolean> {
+  const { status, text } = await bifrostFetch(AUTOMATIC_PAYMENT_URL, jar, {
+    headers: {
+      ...DEFAULT_HEADERS,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      Referer: FRONTPAGE_URL,
+    },
+  });
+
+  if (status === 401 || status === 403) {
+    throw createError({ statusCode: 401, statusMessage: "Session expired." });
+  }
+
+  if (status < 200 || status >= 400) {
+    throw createError({
+      statusCode: 502,
+      statusMessage: `Bifrost request failed (${status}).`,
+    });
+  }
+
+  return parseAutoPaymentStatus(text);
 }
 
 export async function fetchUpcomingEvents(

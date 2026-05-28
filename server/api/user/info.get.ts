@@ -1,4 +1,4 @@
-import { fetchUserEvents, fetchUserInfo } from '../../utils/bifrost'
+import { fetchAutoPaymentStatus, fetchUserInfo } from '../../utils/bifrost'
 import { getSessionJar, getSessionUser } from '../../utils/session'
 
 export default defineEventHandler(async (event) => {
@@ -9,6 +9,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Not authenticated.' })
   }
 
-  const userInfo = await fetchUserInfo(jar);
-  return { userInfo }
+  const [userInfo, autoPaymentEnabled] = await Promise.all([
+    fetchUserInfo(jar),
+    fetchAutoPaymentStatus(jar).catch(() => false),
+  ])
+
+  return { userInfo: { ...userInfo, autoPaymentEnabled } }
 })

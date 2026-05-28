@@ -1,6 +1,7 @@
 export interface UserInfo {
   legalName: string
   birthDate: string
+  autoPaymentEnabled: boolean
   parentsName?: string
   parentsPhoneNo?: string
   parentsEmail?: string

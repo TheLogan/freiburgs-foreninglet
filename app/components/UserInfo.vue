@@ -193,6 +193,14 @@ watch(isAuthed, (authed) => {
               >
                 Handicap
               </v-chip>
+              <v-chip
+                size="small"
+                variant="tonal"
+                :color="userInfo.autoPaymentEnabled ? 'success' : 'default'"
+                :prepend-icon="userInfo.autoPaymentEnabled ? 'mdi-credit-card-check-outline' : 'mdi-credit-card-off-outline'"
+              >
+                {{ userInfo.autoPaymentEnabled ? 'Auto-pay on' : 'Auto-pay off' }}
+              </v-chip>
             </div>
           </div>
         </div>

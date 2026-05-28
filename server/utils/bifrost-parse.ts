@@ -103,6 +103,51 @@ export function parseUserInfo(html: string): UserInfo {
   return userInfo as UserInfo;
 }
 
+/**
+ * Parses the /memberportal/recurring page to determine whether the member has
+ * automatic payment enabled.
+ *
+ * Rules (as specified):
+ *  - Enabled  →  "Fjern kort" button is present AND "Kort udløber" is NOT
+ *                followed by a past date.
+ *  - Disabled →  "Fjern kort" button is absent, OR the card has expired.
+ */
+export function parseAutoPaymentStatus(html: string): boolean {
+  if (isBifrostLoginPage(html)) {
+    throw createError({ statusCode: 401, statusMessage: "Session expired." });
+  }
+
+  const $ = cheerio.load(html);
+
+  // Check for the "Fjern kort" button (any clickable element)
+  let hasFjernKort = false;
+  $("button, input[type='submit'], input[type='button'], a").each((_, el) => {
+    if (/fjern\s+kort/i.test($(el).text())) {
+      hasFjernKort = true;
+    }
+  });
+
+  if (!hasFjernKort) return false;
+
+  // Look for "Kort udløber: MM/YYYY" in the page text.
+  // Example: "Kort udløber: 09/2027"
+  const bodyText = $("body").text();
+  const expiryMatch = bodyText.match(/[kK]ort\s+udl[øo]ber:\s*(\d{1,2})\/(\d{4})/i);
+
+  if (!expiryMatch) {
+    // "Fjern kort" exists but no expiry date found — assume active
+    return true;
+  }
+
+  const month = parseInt(expiryMatch[1], 10); // 1-indexed
+  const year = parseInt(expiryMatch[2], 10);
+  // Card is valid through the last day of the expiry month.
+  // new Date(year, month, 1) with month 1-indexed overflows correctly into the next month.
+  const expiryDate = new Date(year, month, 1);
+
+  return expiryDate > new Date();
+}
+
 // export function parseUpcomingEvents(html: string): UpcomingEvent[] {
 //   if (html.includes('/memberportal/login') && !html.includes('activity-entry')) {
 //     throw createError({ statusCode: 401, statusMessage: 'Session expired.' })
