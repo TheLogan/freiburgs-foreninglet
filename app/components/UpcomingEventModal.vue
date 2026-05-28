@@ -6,6 +6,7 @@ import type { SubscribeFormField } from '#shared/types/subscribe'
 const props = defineProps<{
   modelValue: boolean
   event: UpcomingEvent | null
+  startAtCheckout?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -39,6 +40,13 @@ const commentsHtmlRef = ref<HTMLElement | null>(null)
 const acceptedTerms = ref(false)
 const showTermsError = ref(false)
 const isCheckoutStep = computed(() => checkout.value !== null)
+
+const openingCheckout = computed(
+  () =>
+    Boolean(props.startAtCheckout)
+    && checkoutLoading.value
+    && !checkout.value,
+)
 
 const acceptTermsLabel = computed(
   () =>
@@ -135,6 +143,9 @@ function backToDetails() {
   clearCheckout()
   acceptedTerms.value = false
   showTermsError.value = false
+  if (props.event?.id && !form.value) {
+    void loadSubscribeForm(props.event.id)
+  }
 }
 
 function continueToPayment() {
@@ -246,7 +257,16 @@ watch(
       showTermsError.value = false
       return
     }
-    if (props.event?.id) {
+    if (!props.event?.id) return
+
+    if (props.startAtCheckout) {
+      const ok = await loadPaymentCheckout(props.event.id)
+      if (ok) {
+        acceptedTerms.value = false
+        showTermsError.value = false
+      }
+      void loadSubscribeForm(props.event.id)
+    } else {
       await loadSubscribeForm(props.event.id)
     }
   },
@@ -289,7 +309,12 @@ watch(
       <v-divider />
 
       <v-card-text class="pt-4">
-        <template v-if="isCheckoutStep && checkout">
+        <v-skeleton-loader
+          v-if="openingCheckout"
+          type="article, paragraph@2"
+        />
+
+        <template v-else-if="isCheckoutStep && checkout">
           <div class="text-h6 mb-1">
             {{ checkout.pageTitle || event.name }}
           </div>

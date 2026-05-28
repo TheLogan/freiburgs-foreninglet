@@ -6,11 +6,20 @@ const { events, loading, error, getUpcomingEvents } = useUpcomingEvents();
 
 const subscribeModalOpen = ref(false);
 const selectedEvent = ref<UpcomingEvent | null>(null);
+const subscribeStartAtCheckout = ref(false);
 
-function openSubscribe(event: UpcomingEvent) {
+function openSubscribe(
+  event: UpcomingEvent,
+  options?: { checkout?: boolean },
+) {
   selectedEvent.value = event;
+  subscribeStartAtCheckout.value = options?.checkout ?? false;
   subscribeModalOpen.value = true;
 }
+
+watch(subscribeModalOpen, (open) => {
+  if (!open) subscribeStartAtCheckout.value = false;
+});
 
 function onSubscribeSuccess() {
   getUpcomingEvents();
@@ -231,7 +240,7 @@ watch(
           size="small"
           variant="tonal"
           color="primary"
-          @click="openSubscribe(item)"
+          @click="openSubscribe(item, { checkout: true })"
         >
           Register
         </v-btn>
@@ -241,6 +250,7 @@ watch(
     <UpcomingEventModal
       v-model="subscribeModalOpen"
       :event="selectedEvent"
+      :start-at-checkout="subscribeStartAtCheckout"
       @success="onSubscribeSuccess"
     />
   </v-card>
