@@ -654,7 +654,7 @@ watch(
           :disabled="loading || postingComment || checkoutLoading"
           @click="handleSubscribe"
         >
-          Subscribe
+          Register
         </v-btn>
       </v-card-actions>
     </v-card>

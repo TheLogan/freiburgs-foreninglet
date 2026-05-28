@@ -1,46 +1,46 @@
 <script setup lang="ts">
-import type { UpcomingEvent } from '#shared/types/event'
+import type { UpcomingEvent } from "#shared/types/event";
 
-const { isAuthed } = useAuth()
-const { events, loading, error, getUpcomingEvents } = useUpcomingEvents()
+const { isAuthed } = useAuth();
+const { events, loading, error, getUpcomingEvents } = useUpcomingEvents();
 
-const subscribeModalOpen = ref(false)
-const selectedEvent = ref<UpcomingEvent | null>(null)
+const subscribeModalOpen = ref(false);
+const selectedEvent = ref<UpcomingEvent | null>(null);
 
 function openSubscribe(event: UpcomingEvent) {
-  selectedEvent.value = event
-  subscribeModalOpen.value = true
+  selectedEvent.value = event;
+  subscribeModalOpen.value = true;
 }
 
 function onSubscribeSuccess() {
-  getUpcomingEvents()
+  getUpcomingEvents();
 }
 
-const search = ref('')
-const page = ref(1)
-const itemsPerPage = ref(25)
+const search = ref("");
+const page = ref(1);
+const itemsPerPage = ref(25);
 
 const itemsPerPageOptions = [
-  { value: 10, title: '10' },
-  { value: 25, title: '25' },
-  { value: 50, title: '50' },
-  { value: 100, title: '100' },
-] as const
+  { value: 10, title: "10" },
+  { value: 25, title: "25" },
+  { value: 50, title: "50" },
+  { value: 100, title: "100" },
+] as const;
 
 const headers = [
-  { title: 'Event', key: 'name', minWidth: '180px' },
-  { title: 'Dates', key: 'dates', minWidth: '160px' },
-  { title: 'Location', key: 'location', minWidth: '140px' },
-  { title: 'Price', key: 'price', width: '120px' },
-  { title: 'Status', key: 'status', width: '120px' },
-  { title: '', key: 'actions', width: '100px', sortable: false },
-] as const
+  { title: "Event", key: "name", minWidth: "180px" },
+  { title: "Dates", key: "dates", minWidth: "160px" },
+  { title: "Location", key: "location", minWidth: "140px" },
+  { title: "Price", key: "price", width: "120px" },
+  { title: "Status", key: "status", width: "120px" },
+  { title: "", key: "actions", width: "100px", sortable: false },
+] as const;
 
-const eventCount = computed(() => events.value.length)
+const eventCount = computed(() => events.value.length);
 
 const filteredEvents = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return events.value
+  const q = search.value.trim().toLowerCase();
+  if (!q) return events.value;
 
   return events.value.filter((event) => {
     const haystack = [
@@ -54,56 +54,56 @@ const filteredEvents = computed(() => {
       statusLabel(event.status),
     ]
       .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
+      .join(" ")
+      .toLowerCase();
 
-    return haystack.includes(q)
-  })
-})
+    return haystack.includes(q);
+  });
+});
 
-const filteredCount = computed(() => filteredEvents.value.length)
+const filteredCount = computed(() => filteredEvents.value.length);
 
 const noDataText = computed(() =>
   search.value.trim()
-    ? 'No events match your search.'
-    : 'No upcoming events found.',
-)
+    ? "No events match your search."
+    : "No upcoming events found.",
+);
 
 function displayDates(event: UpcomingEvent): string {
-  return event.dateRange ?? event.startDate ?? '—'
+  return event.dateRange ?? event.startDate ?? "—";
 }
 
-function statusLabel(status: UpcomingEvent['status']): string {
-  if (status === 'available') return 'Available'
-  if (status === 'sold_out') return 'Sold out'
-  return 'Unknown'
+function statusLabel(status: UpcomingEvent["status"]): string {
+  if (status === "available") return "Available";
+  if (status === "sold_out") return "Sold out";
+  return "Unknown";
 }
 
-function statusColor(status: UpcomingEvent['status']): string {
-  if (status === 'available') return 'success'
-  if (status === 'sold_out') return 'error'
-  return 'default'
+function statusColor(status: UpcomingEvent["status"]): string {
+  if (status === "available") return "success";
+  if (status === "sold_out") return "error";
+  return "default";
 }
 
 watch(search, () => {
-  page.value = 1
-})
+  page.value = 1;
+});
 
-watch(isAuthed, (authed) => {
-  if (authed) {
-    getUpcomingEvents()
-  }
-}, { immediate: true })
+watch(
+  isAuthed,
+  (authed) => {
+    if (authed) {
+      getUpcomingEvents();
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
   <v-card class="upcoming-events-card" elevation="1">
     <v-card-title class="d-flex align-center flex-wrap ga-2 py-4">
-      <v-icon
-        icon="mdi-calendar-star"
-        class="mr-1"
-        color="primary"
-      />
+      <v-icon icon="mdi-calendar-star" class="mr-1" color="primary" />
       <span>Upcoming events</span>
       <v-chip
         v-if="!loading && eventCount > 0"
@@ -124,13 +124,10 @@ watch(isAuthed, (authed) => {
     </v-card-title>
 
     <v-card-subtitle class="pb-0">
-      Open activities you can sign up for on Foreninglet
+      Open activities you can register for on Foreninglet
     </v-card-subtitle>
 
-    <v-card-text
-      v-if="eventCount > 0 || search"
-      class="pt-4 pb-0"
-    >
+    <v-card-text v-if="eventCount > 0 || search" class="pt-4 pb-0">
       <v-text-field
         v-model="search"
         prepend-inner-icon="mdi-magnify"
@@ -177,21 +174,21 @@ watch(isAuthed, (authed) => {
       class="upcoming-events-table"
     >
       <template #item.name="{ item }">
-        <div>
-          <span class="font-weight-medium d-block">{{ item.name }}</span>
-          <span
-            v-if="item.instructor"
-            class="text-caption text-medium-emphasis"
-          >
-            {{ item.instructor }}
-          </span>
-          <span
-            v-if="item.seats"
-            class="text-caption text-medium-emphasis d-block"
-          >
-            {{ item.seats }}
-          </span>
-        </div>
+          <v-btn variant="flat" @click="openSubscribe(item)">
+            <span class="font-weight-medium d-block">{{ item.name }}</span>
+            <span
+              v-if="item.instructor"
+              class="text-caption text-medium-emphasis"
+            >
+              {{ item.instructor }}
+            </span>
+            <span
+              v-if="item.seats"
+              class="text-caption text-medium-emphasis d-block"
+            >
+              {{ item.seats }}
+            </span>
+          </v-btn>
       </template>
 
       <template #item.dates="{ item }">
@@ -236,7 +233,7 @@ watch(isAuthed, (authed) => {
           color="primary"
           @click="openSubscribe(item)"
         >
-          Sign up
+          Register
         </v-btn>
       </template>
     </v-data-table>
