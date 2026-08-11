@@ -1,19 +1,8 @@
-import { verifyBifrostSession } from '../../utils/bifrost'
-import { clearAuthSession, getSessionJar, getSessionUser } from '../../utils/session'
+import { getAdminJar } from '../../utils/adminSession'
+import type { User } from '#shared/types/user'
 
-export default defineEventHandler(async (event) => {
-  const user = getSessionUser(event)
-  const jar = getSessionJar(event)
-
-  if (!user || !jar) {
-    return null
-  }
-
-  const valid = await verifyBifrostSession(jar)
-  if (!valid) {
-    clearAuthSession(event)
-    return null
-  }
-
+export default defineEventHandler(async (_event) => {
+  await getAdminJar()
+  const user: User = { id: 'system' }
   return user
 })

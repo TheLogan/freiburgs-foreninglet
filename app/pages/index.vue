@@ -1,17 +1,5 @@
-<script setup lang="ts">
-const { isAuthed } = useAuth()
-</script>
-
 <template>
-  <v-container
-    v-if="!isAuthed"
-    class="fill-height d-flex align-center justify-center"
-    fluid
-  >
-    <LoginForm />
-  </v-container>
-
-  <v-container v-else class="py-6">
+  <v-container class="py-6">
     <header class="mb-6">
       <h1 class="text-h4 font-weight-medium mb-1">
         Dashboard

@@ -17,24 +17,5 @@ export function useAuth() {
     }
   }
 
-  async function login(username: string, password: string) {
-    const data = await $fetch<{ user: User }>('/api/auth/login', {
-      method: 'POST',
-      body: { username, password },
-    })
-    user.value = data.user
-    sessionLoaded.value = true
-  }
-
-  async function logout() {
-    await $fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
-    user.value = null
-    sessionLoaded.value = false
-    useUserEvents().clearUserEvents()
-    useUserInfo().clearUserInfo()
-    useUpcomingEvents().clearUpcomingEvents()
-    await navigateTo('/')
-  }
-
-  return { user, isAuthed, login, fetchSession, logout }
+  return { user, isAuthed, fetchSession }
 }

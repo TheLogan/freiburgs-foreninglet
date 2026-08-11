@@ -1,13 +1,8 @@
 import { fetchSubscribeForm } from '../../../utils/bifrost'
-import { getSessionJar, getSessionUser } from '../../../utils/session'
+import { getAdminJar } from '../../../utils/adminSession'
 
 export default defineEventHandler(async (event) => {
-  const user = getSessionUser(event)
-  const jar = getSessionJar(event)
-
-  if (!user || !jar) {
-    throw createError({ statusCode: 401, statusMessage: 'Not authenticated.' })
-  }
+  const jar = await getAdminJar()
 
   const id = getRouterParam(event, 'id')
   if (!id?.trim()) {

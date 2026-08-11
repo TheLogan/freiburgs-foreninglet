@@ -169,68 +169,38 @@ function parseActivityId(href: string | undefined): string | undefined {
   return href?.match(/\/subscribe\/index\/(\d+)/)?.[1];
 }
 export function parseUpcomingEvents(html: string): UpcomingEvent[] {
-  if (isBifrostLoginPage(html) && !html.includes("activity-entry")) {
+  if (isBifrostLoginPage(html)) {
     throw createError({ statusCode: 401, statusMessage: "Session expired." });
   }
   const $ = cheerio.load(html);
-  const entries = $(".activity-entry");
-  if (!entries.length) {
+
+  // The activity/search page returns a table of simple anchor links, one per row.
+  const links = $('a[href*="/memberportal/subscribe/index/"]');
+  if (!links.length) {
     throw createError({
       statusCode: 502,
       statusMessage: "Activity list not found on Foreninglet page.",
     });
   }
-  return entries
+  return links
     .map((_, el) => {
-      const $entry = $(el);
-      const href = $entry
-        .find('a[href*="/memberportal/subscribe/index/"]')
-        .first()
-        .attr("href");
+      const $a = $(el);
+      const href = $a.attr("href") ?? "";
       const id = parseActivityId(href);
-      if (!id || !href) return null; // or skip entries without subscribe link
-      const rawStatus = $entry.attr("data-subscription-status-filter") ?? "";
-      const status =
-        rawStatus === "can_subscribe_directly"
-          ? "available"
-          : rawStatus === "sold_out"
-            ? "sold_out"
-            : "unknown";
-      const price =
-        entryText($entry, ".activity-price-div") ??
-        $entry
-          .find('.activity-first-sub-column div:contains("Pris:")')
-          .first()
-          .text()
-          .replace(/\s+/g, " ")
-          .trim();
-      const location =
-        $entry
-          .find(".activity-location-div")
-          .first()
-          .attr("data-original-title") ??
-        entryText($entry, ".activity-location-div");
-      const dateRange =
-        $entry
-          .find(".activity-second-sub-column div")
-          .filter((_, node) => $(node).find(".icon-calendar-1").length > 0)
-          .first()
-          .text()
-          .replace(/\s+/g, " ")
-          .trim() || undefined;
+      if (!id || !href) return null;
+
+      // Text format: "Activity Name - DD. MMM YYYY, kl. HH:MM"
+      const fullText = $a.text().replace(/\s+/g, " ").trim();
+      const dashIdx = fullText.lastIndexOf(" - ");
+      const name = dashIdx >= 0 ? fullText.slice(0, dashIdx).trim() : fullText;
+      const startDate = dashIdx >= 0 ? fullText.slice(dashIdx + 3).trim() : undefined;
+
       return {
         id,
-        name: entryText($entry, "h3.activity-name") ?? "",
-        status,
-        price: price || undefined,
-        startDate: entryText($entry, ".settlement-date-div"),
-        dateRange,
-        location,
-        instructor: entryText($entry, ".activity-instructor-div span"),
-        seats: entryText($entry, ".seats-text-div"),
-        subscribeUrl: href.startsWith("http")
-          ? href
-          : `https://bifrost.foreninglet.dk${href}`,
+        name,
+        status: "unknown" as const,
+        startDate,
+        subscribeUrl: href.startsWith("http") ? href : `https://bifrost.foreninglet.dk${href}`,
       };
     })
     .get()

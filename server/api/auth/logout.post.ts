@@ -1,6 +1,3 @@
-import { clearAuthSession } from '../../utils/session'
-
-export default defineEventHandler((event) => {
-  clearAuthSession(event)
+export default defineEventHandler((_event) => {
   return { ok: true }
 })

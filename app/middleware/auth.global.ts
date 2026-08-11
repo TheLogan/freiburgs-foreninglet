@@ -1,11 +1,7 @@
-export default defineNuxtRouteMiddleware(async (to) => {
+export default defineNuxtRouteMiddleware(async () => {
   const { isAuthed, fetchSession } = useAuth()
 
   if (!isAuthed.value) {
     await fetchSession()
-  }
-
-  if (!isAuthed.value && to.path !== '/') {
-    return navigateTo('/')
   }
 })
