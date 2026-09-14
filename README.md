@@ -82,6 +82,7 @@ git clone https://github.com/YOUR_GITHUB_USERNAME/freiburgs-foreninglet.git
 cd freiburgs-foreninglet
 
 # 3. Install dependencies
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 npm install
 
 # 4. Start the development server
