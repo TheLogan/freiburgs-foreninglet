@@ -3,24 +3,17 @@ import {
   BASE_URL,
   DEFAULT_CLUB_ID,
   DO_LOGIN_URL,
-  FRONTPAGE_URL,
   LOGIN_URL,
   LOOKUP_URL,
+  subscribeIndexUrl,
 } from "#shared/constants/foreninglet";
-import type { PaymentCheckout, SubscribeForm } from "#shared/types/subscribe";
-import { subscribeIdentifyUrl, subscribeIndexUrl } from "#shared/constants/foreninglet";
+import type { UpcomingEvent } from "#shared/types/event";
 import {
-  htmlHasPaymentCheckout,
-  htmlHasSubscribeForm,
   isBifrostLoginPage,
-  sessionExpiredError,
-  parseIdentifySlotFromHtml,
-  parsePaymentCheckout,
-  parseSubscribeForm,
-  parseUpcomingEvents,
   parseEventDetails,
+  parseUpcomingEvents,
+  sessionExpiredError,
 } from "./bifrost-parse";
-import { UpcomingEvent } from "~~/shared/types/event";
 
 export interface LookupMember {
   member_id: string;
@@ -65,19 +58,6 @@ function portalHeaders(extra?: Record<string, string>) {
 
 export function createCookieJar(): CookieJar {
   return new Map();
-}
-
-export function serializeJar(jar: CookieJar): string {
-  return JSON.stringify(Object.fromEntries(jar));
-}
-
-export function deserializeJar(serialized: string): CookieJar {
-  try {
-    const obj = JSON.parse(serialized) as Record<string, string>;
-    return new Map(Object.entries(obj));
-  } catch {
-    return createCookieJar();
-  }
 }
 
 function cookieHeader(jar: CookieJar): string {
@@ -400,131 +380,4 @@ function withoutUndefined<T extends object>(obj: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(obj).filter(([, value]) => value !== undefined),
   ) as Partial<T>;
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isRetryableSubscribeError(error: unknown): boolean {
-  return (
-    error !== null
-    && typeof error === "object"
-    && "statusCode" in error
-    && (error as { statusCode: number }).statusCode === 502
-  );
-}
-
-export async function fetchPaymentCheckout(
-  jar: CookieJar,
-  activityId: string,
-  options?: { slot?: string; referer?: string },
-): Promise<PaymentCheckout> {
-  let slot = options?.slot?.trim() || "0";
-
-  if (!options?.slot) {
-    try {
-      const indexUrl = subscribeIndexUrl(activityId);
-      const { text: indexHtml } = await bifrostFetch(indexUrl, jar, {
-        headers: {
-          ...DEFAULT_HEADERS,
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          Referer: options?.referer ?? ALL_AVAILABLE_EVENTS_URL,
-        },
-      });
-      const parsedSlot = parseIdentifySlotFromHtml(indexHtml, activityId);
-      if (parsedSlot) slot = parsedSlot;
-    } catch {
-      // Fall back to default slot when index page cannot be loaded.
-    }
-  }
-
-  const pageUrl = subscribeIdentifyUrl(activityId, slot);
-  const referer = options?.referer ?? subscribeIndexUrl(activityId);
-
-  const { status, text, url } = await bifrostFetch(pageUrl, jar, {
-    headers: {
-      ...DEFAULT_HEADERS,
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      Referer: referer,
-    },
-  });
-
-  if (status === 401 || status === 403 || isBifrostLoginPage(text, url)) {
-    throw sessionExpiredError();
-  }
-
-  if (status < 200 || status >= 400) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: `Could not load payment page (${status}).`,
-    });
-  }
-
-  if (!htmlHasPaymentCheckout(text)) {
-    if (htmlHasSubscribeForm(text)) {
-      throw createError({
-        statusCode: 422,
-        statusMessage:
-          "Complete the sign-up form on Foreninglet before payment.",
-        data: { code: "needs_signup_form" },
-      });
-    }
-    throw createError({
-      statusCode: 502,
-      statusMessage: "Payment checkout not found on Foreninglet page.",
-    });
-  }
-
-  return parsePaymentCheckout(text, pageUrl);
-}
-
-export async function fetchSubscribeForm(
-  jar: CookieJar,
-  activityId: string,
-  options?: { referer?: string; attempts?: number },
-): Promise<SubscribeForm> {
-  const pageUrl = subscribeIndexUrl(activityId);
-  const referer = options?.referer ?? ALL_AVAILABLE_EVENTS_URL;
-  const attempts = options?.attempts ?? 1;
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    if (attempt > 0) {
-      await delay(300 * attempt);
-    }
-
-    try {
-      const { status, text, url } = await bifrostFetch(pageUrl, jar, {
-        headers: {
-          ...DEFAULT_HEADERS,
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          Referer: referer,
-        },
-      });
-
-      if (status === 401 || status === 403 || isBifrostLoginPage(text, url)) {
-        throw sessionExpiredError();
-      }
-
-      if (status < 200 || status >= 400) {
-        throw createError({
-          statusCode: 502,
-          statusMessage: `Could not load sign-up page (${status}).`,
-        });
-      }
-
-      return parseSubscribeForm(text, pageUrl);
-    } catch (error) {
-      lastError = error;
-      if (!isRetryableSubscribeError(error) || attempt === attempts - 1) {
-        throw error;
-      }
-    }
-  }
-
-  throw lastError;
 }

@@ -1,7 +1,4 @@
 import type { UpcomingEvent, UpcomingEventResponse } from '#shared/types/event'
-import { getFetchErrorMessage } from '~/utils/errors'
-
-export type { UpcomingEvent }
 
 type EventStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -20,18 +17,12 @@ export function useUpcomingEvents() {
       const data = await $fetch<UpcomingEventResponse>('/api/events/upcoming')
       events.value = data.upcomingEvents
       status.value = 'success'
-    } catch (e) {
+    } catch {
       status.value = 'error'
-      error.value = getFetchErrorMessage(e, 'Could not load upcoming events.')
+      error.value = 'Arrangementerne kunne ikke hentes lige nu. Prøv igen senere.'
       events.value = []
     }
   }
 
-  function clearUpcomingEvents() {
-    events.value = []
-    status.value = 'idle'
-    error.value = null
-  }
-
-  return { events, loading, error, getUpcomingEvents, clearUpcomingEvents }
+  return { events, loading, error, getUpcomingEvents }
 }

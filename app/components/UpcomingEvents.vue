@@ -3,12 +3,6 @@ import type { UpcomingEvent } from "#shared/types/event";
 
 const { events, loading, error, getUpcomingEvents } = useUpcomingEvents();
 
-const openEventId = ref<string | null>(null);
-
-function toggleDetails(id: string) {
-  openEventId.value = openEventId.value === id ? null : id;
-}
-
 /** Day and short month for the date tile, from e.g. "7. nov. 2026, kl. 17:00". */
 function dateTile(event: UpcomingEvent): { day: string; month: string } | null {
   const match = event.startDate?.match(/^(\d{1,2})\.\s*([a-zæøå]+)/i);
@@ -28,10 +22,10 @@ await callOnce("upcoming-events", getUpcomingEvents);
   <section class="events" aria-labelledby="events-title">
     <header class="events__header">
       <h2 id="events-title" class="events__title">
-        Upcoming events
+        Kommende arrangementer
       </h2>
       <p class="events__lead">
-        Sign-up and payment happen on Foreninglet.
+        Tilmelding og betaling foregår på Foreninglet.
       </p>
     </header>
 
@@ -59,14 +53,13 @@ await callOnce("upcoming-events", getUpcomingEvents);
       v-else-if="!error && !events.length"
       class="events__empty"
     >
-      No upcoming events right now. Check back later.
+      Der er ingen kommende arrangementer lige nu. Kig forbi igen senere.
     </p>
 
     <article
       v-for="event in events"
       :key="event.id"
       class="event-card"
-      :class="{ 'event-card--open': openEventId === event.id }"
     >
       <div class="event-card__main">
         <div
@@ -102,7 +95,7 @@ await callOnce("upcoming-events", getUpcomingEvents);
           >
             <span v-if="event.seats">{{ event.seats }}</span>
             <span v-if="event.seats && event.signupDeadline"> · </span>
-            <span v-if="event.signupDeadline">Sign up by {{ event.signupDeadline }}</span>
+            <span v-if="event.signupDeadline">Tilmeldingsfrist {{ event.signupDeadline }}</span>
           </p>
         </div>
 
@@ -114,7 +107,7 @@ await callOnce("upcoming-events", getUpcomingEvents);
             size="small"
             label
           >
-            Sold out
+            Udsolgt
           </v-chip>
           <v-btn
             v-else-if="event.status === 'available'"
@@ -125,30 +118,10 @@ await callOnce("upcoming-events", getUpcomingEvents);
             rel="noopener noreferrer"
             append-icon="mdi-open-in-new"
           >
-            Register
-          </v-btn>
-          <v-btn
-            variant="text"
-            color="primary"
-            :append-icon="openEventId === event.id ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-            :aria-expanded="openEventId === event.id"
-            :aria-controls="`event-details-${event.id}`"
-            @click="toggleDetails(event.id)"
-          >
-            Details
+            Tilmeld
           </v-btn>
         </div>
       </div>
-
-      <v-expand-transition>
-        <div
-          v-if="openEventId === event.id"
-          :id="`event-details-${event.id}`"
-          class="event-card__details"
-        >
-          <EventDetails :event-id="event.id" />
-        </div>
-      </v-expand-transition>
     </article>
   </section>
 </template>
@@ -189,10 +162,6 @@ await callOnce("upcoming-events", getUpcomingEvents);
   border-radius: 4px;
   margin-bottom: 12px;
   overflow: hidden;
-}
-
-.event-card--open {
-  border-left: 4px solid rgb(var(--v-theme-secondary));
 }
 
 .event-card__main {
@@ -267,11 +236,6 @@ await callOnce("upcoming-events", getUpcomingEvents);
   gap: 4px;
 }
 
-.event-card__details {
-  border-top: 1px solid rgb(var(--v-theme-divider));
-  padding: 16px 20px 20px;
-}
-
 @media (max-width: 600px) {
   .event-card__main {
     grid-template-columns: auto 1fr;
@@ -294,10 +258,6 @@ await callOnce("upcoming-events", getUpcomingEvents);
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
-  }
-
-  .event-card__details {
-    padding: 16px;
   }
 }
 </style>
