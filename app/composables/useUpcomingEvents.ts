@@ -20,7 +20,6 @@ export function useUpcomingEvents() {
       const data = await $fetch<UpcomingEventResponse>('/api/events/upcoming')
       events.value = data.upcomingEvents
       status.value = 'success'
-      console.log('data', data)
     } catch (e) {
       status.value = 'error'
       error.value = getFetchErrorMessage(e, 'Could not load upcoming events.')

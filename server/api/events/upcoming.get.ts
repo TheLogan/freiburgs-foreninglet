@@ -1,8 +1,7 @@
 import { fetchUpcomingEvents } from '../../utils/bifrost'
-import { getAdminJar } from '../../utils/adminSession'
+import { withAdminJar } from '../../utils/adminSession'
 
 export default defineEventHandler(async (_event) => {
-  const jar = await getAdminJar()
-  const upcomingEvents = await fetchUpcomingEvents(jar)
+  const upcomingEvents = await withAdminJar(fetchUpcomingEvents)
   return { upcomingEvents }
 })

@@ -1,6 +1,4 @@
 import * as cheerio from "cheerio";
-import type { UserEvent } from "#shared/types/userEvents";
-import type { UserInfo } from "#shared/types/userInfo";
 import { UpcomingEvent } from "~~/shared/types/event";
 import type {
   PaymentCheckout,
@@ -12,140 +10,41 @@ import type {
 } from "#shared/types/subscribe";
 import type { Element } from "domhandler";
 
-/** True when Foreninglet returned the portal login page, not an authenticated page. */
-export function isBifrostLoginPage(html: string): boolean {
-  if (!html.includes("/memberportal/login")) return false;
+const SESSION_EXPIRED_CODE = "session_expired";
 
-  const lower = html.toLowerCase();
-  const authenticatedMarkers = [
-    "subscription-form",
-    "subscribe-form",
-    "subscribe/index/",
-    "flte_payment_form",
-    "payment.quickpay.net",
-    "member-form",
-    "activity-entry",
-    "enrolled-activities-table",
-    "log ud",
-    "min profil",
-  ];
+/** Thrown when Foreninglet answers with its login page instead of the requested page. */
+export function sessionExpiredError() {
+  return createError({
+    statusCode: 401,
+    statusMessage: "Session expired.",
+    data: { code: SESSION_EXPIRED_CODE },
+  });
+}
 
-  if (authenticatedMarkers.some((marker) => lower.includes(marker))) {
-    return false;
-  }
-
+export function isSessionExpiredError(error: unknown): boolean {
   return (
-    html.includes("lookupmembers")
-    || (html.includes('name="username"') && html.includes('name="password"'))
+    error !== null
+    && typeof error === "object"
+    && (error as { data?: { code?: string } }).data?.code === SESSION_EXPIRED_CODE
   );
 }
 
-export function parseEnrolledEvents(html: string): UserEvent[] {
-  if (isBifrostLoginPage(html) && !html.includes("enrolled-activities-table")) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
-  }
-
-  const $ = cheerio.load(html);
-  const table = $("#enrolled-activities-table");
-
-  if (!table.length) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: "Activities table not found on Foreninglet page.",
-    });
-  }
-
-  return table
-    .find("tbody tr")
-    .map((_, row) => {
-      const cells = $(row).find("td");
-      return {
-        teamId: $(cells[0]).text().trim(),
-        name: $(cells[1]).text().trim(),
-        date: $(cells[2]).text().trim(),
-      };
-    })
-    .get();
-}
-
-export function parseUserInfo(html: string): UserInfo {
-  if (isBifrostLoginPage(html) && !html.includes("member-form")) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
-  }
-
-  const $ = cheerio.load(html);
-  const infoForm = $("#member-form");
-
-  const userInfo: Partial<UserInfo> = {
-    legalName:
-      infoForm.find('input[name="first_name"]').attr("value")?.trim() ?? "",
-    birthDate:
-      infoForm.find('input[name="birthday"]').attr("value")?.trim() ?? "",
-
-    // parentsName: infoForm.find('input[name=""]').attr("value")?.trim() ?? "",
-    // parentsPhoneNo: infoForm.find('input[name=""]').attr("value")?.trim() ?? "",
-    // parentsEmail: infoForm.find('input[name=""]').attr("value")?.trim() ?? "",
-    // nickname: infoForm.find('input[name=""]').attr("value")?.trim() ?? "",
-
-    address: infoForm.find('input[name="address"]').attr("value")?.trim() ?? "",
-    postcode: infoForm.find('input[name="zip"]').attr("value")?.trim() ?? "",
-    city: infoForm.find('input[name="city"]').attr("value")?.trim() ?? "",
-    email: infoForm.find('input[name="email"]').attr("value")?.trim() ?? "",
-    phoneNo: infoForm.find('input[name="mobile"]').attr("value")?.trim() ?? "",
-    // handicap: infoForm.find('input[name=""]').attr("value")?.trim() ?? "",
-    // gender: infoForm.find('input[name=""]').attr("value")?.trim() ?? "",
-    specialNeeds:
-      infoForm.find('input[name="field10"]').attr("value")?.trim() ?? "",
-    pronouns:
-      infoForm.find('input[name="field24"]').attr("value")?.trim() ?? "",
-  };
-
-  return userInfo as UserInfo;
-}
-
 /**
- * Parses the /memberportal/recurring page to determine whether the member has
- * automatic payment enabled.
- *
- * Rules (as specified):
- *  - Enabled  →  "Fjern kort" button is present AND "Kort udløber" is NOT
- *                followed by a past date.
- *  - Disabled →  "Fjern kort" button is absent, OR the card has expired.
+ * True when Foreninglet returned the portal login page, not an authenticated page.
+ * Logged-out requests are redirected there with HTTP 200, so the status code alone
+ * cannot be trusted.
  */
-export function parseAutoPaymentStatus(html: string): boolean {
-  if (isBifrostLoginPage(html)) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
-  }
-
-  const $ = cheerio.load(html);
-
-  // Check for the "Fjern kort" button (any clickable element)
-  let hasFjernKort = false;
-  $("button, input[type='submit'], input[type='button'], a").each((_, el) => {
-    if (/fjern\s+kort/i.test($(el).text())) {
-      hasFjernKort = true;
+export function isBifrostLoginPage(html: string, finalUrl?: string): boolean {
+  if (finalUrl) {
+    try {
+      if (new URL(finalUrl).pathname.replace(/\/+$/, "") === "/memberportal/login") {
+        return true;
+      }
+    } catch {
+      // Ignore malformed URLs and fall back to the HTML check.
     }
-  });
-
-  if (!hasFjernKort) return false;
-
-  // Look for "Kort udløber: MM/YYYY" in the page text.
-  // Example: "Kort udløber: 09/2027"
-  const bodyText = $("body").text();
-  const expiryMatch = bodyText.match(/[kK]ort\s+udl[øo]ber:\s*(\d{1,2})\/(\d{4})/i);
-
-  if (!expiryMatch) {
-    // "Fjern kort" exists but no expiry date found — assume active
-    return true;
   }
-
-  const month = parseInt(expiryMatch[1], 10); // 1-indexed
-  const year = parseInt(expiryMatch[2], 10);
-  // Card is valid through the last day of the expiry month.
-  // new Date(year, month, 1) with month 1-indexed overflows correctly into the next month.
-  const expiryDate = new Date(year, month, 1);
-
-  return expiryDate > new Date();
+  return html.includes('id="member-portal-login-form"');
 }
 
 // export function parseUpcomingEvents(html: string): UpcomingEvent[] {
@@ -170,7 +69,7 @@ function parseActivityId(href: string | undefined): string | undefined {
 }
 export function parseUpcomingEvents(html: string): UpcomingEvent[] {
   if (isBifrostLoginPage(html)) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
+    throw sessionExpiredError();
   }
   const $ = cheerio.load(html);
 
@@ -571,7 +470,7 @@ export function htmlHasSubscribeForm(html: string): boolean {
 
 export function parseSubscribeForm(html: string, pageUrl: string): SubscribeForm {
   if (isBifrostLoginPage(html)) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
+    throw sessionExpiredError();
   }
 
   const $ = cheerio.load(html);
@@ -689,55 +588,6 @@ export function parseSubscribeForm(html: string, pageUrl: string): SubscribeForm
   };
 }
 
-export function parseCommentPostResult(html: string): { success: boolean; message: string } {
-  const $ = cheerio.load(html);
-  const lower = html.toLowerCase();
-
-  const errorText = $(".alert-danger, .validation-summary-errors, .error")
-    .first()
-    .text()
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (errorText) {
-    return { success: false, message: errorText };
-  }
-
-  const successText = $(".alert-success, .alert-info")
-    .first()
-    .text()
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (
-    successText
-    || lower.includes("kommentar")
-    || lower.includes("tak for")
-    || lower.includes("bekræft")
-  ) {
-    return {
-      success: true,
-      message: successText || "Comment posted.",
-    };
-  }
-
-  if (isBifrostLoginPage(html)) {
-    return { success: false, message: "Session expired. Please sign in again." };
-  }
-
-  if ($("form").length && html.includes("subscribe")) {
-    return {
-      success: false,
-      message: "Comment could not be posted. Please check the form and try again.",
-    };
-  }
-
-  return {
-    success: true,
-    message: successText || "Comment posted.",
-  };
-}
-
 const IDENTIFY_PATH_RE = /\/subscribe\/identify\/(\d+)\/(\d+)/g;
 
 export function parseIdentifySlotFromHtml(
@@ -765,7 +615,7 @@ export function htmlHasPaymentCheckout(html: string): boolean {
 
 export function parsePaymentCheckout(html: string, pageUrl: string): PaymentCheckout {
   if (isBifrostLoginPage(html)) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
+    throw sessionExpiredError();
   }
 
   const $ = cheerio.load(html);

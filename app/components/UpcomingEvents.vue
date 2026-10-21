@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { UpcomingEvent } from "#shared/types/event";
 
-const { isAuthed } = useAuth();
 const { events, loading, error, getUpcomingEvents } = useUpcomingEvents();
 
 const subscribeModalOpen = ref(false);
@@ -20,10 +19,6 @@ function openSubscribe(
 watch(subscribeModalOpen, (open) => {
   if (!open) subscribeStartAtCheckout.value = false;
 });
-
-function onSubscribeSuccess() {
-  getUpcomingEvents();
-}
 
 const search = ref("");
 const page = ref(1);
@@ -98,15 +93,7 @@ watch(search, () => {
   page.value = 1;
 });
 
-watch(
-  isAuthed,
-  (authed) => {
-    if (authed) {
-      getUpcomingEvents();
-    }
-  },
-  { immediate: true },
-);
+onMounted(getUpcomingEvents);
 </script>
 
 <template>
@@ -251,7 +238,6 @@ watch(
       v-model="subscribeModalOpen"
       :event="selectedEvent"
       :start-at-checkout="subscribeStartAtCheckout"
-      @success="onSubscribeSuccess"
     />
   </v-card>
 </template>

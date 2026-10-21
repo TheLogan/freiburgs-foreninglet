@@ -43,22 +43,6 @@ export interface SubscribeFormResponse {
   form: SubscribeForm
 }
 
-export interface SubscribeLinkBody {
-  url: string
-}
-
-export interface PostCommentBody {
-  fields: Record<string, string>
-}
-
-export interface PostCommentResponse {
-  success: boolean
-  message: string
-  form?: SubscribeForm
-  /** True when the comment was accepted but not yet visible in the HTML feed */
-  commentPending?: boolean
-}
-
 export interface PaymentLineItem {
   text: string
   amount: string

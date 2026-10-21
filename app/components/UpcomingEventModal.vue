@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { BASE_URL } from '#shared/constants/foreninglet'
 import type { UpcomingEvent } from '#shared/types/event'
-import type { SubscribeFormField } from '#shared/types/subscribe'
 
 const props = defineProps<{
   modelValue: boolean
@@ -11,32 +10,22 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  success: []
 }>()
 
 const {
   form,
   loading,
-  postingComment,
-  deletingComment,
-  deletingCommentHref,
-  commentPending,
   error,
-  successMessage,
   checkout,
   checkoutLoading,
   checkoutError,
   loadSubscribeForm,
-  postComment,
-  followSubscribeLink,
   loadPaymentCheckout,
   clearCheckout,
   resetSubscribe,
 } = useEventSubscribe()
 
-const formValues = ref<Record<string, string>>({})
 const subscribeContentRef = ref<HTMLElement | null>(null)
-const commentsHtmlRef = ref<HTMLElement | null>(null)
 const acceptedTerms = ref(false)
 const showTermsError = ref(false)
 const isCheckoutStep = computed(() => checkout.value !== null)
@@ -69,65 +58,12 @@ const hasSubscribeContent = computed(
     ),
 )
 
-const visibleFields = computed(() =>
-  form.value?.fields.filter((field) => field.type !== 'hidden') ?? [],
-)
-
-const hiddenFields = computed(() =>
-  form.value?.fields.filter((field) => field.type === 'hidden') ?? [],
-)
-
 function displayDates(event: UpcomingEvent): string {
   return event.dateRange ?? event.startDate ?? ''
 }
 
 function close() {
   emit('update:modelValue', false)
-}
-
-function initFormValues(fields: SubscribeFormField[]) {
-  const values: Record<string, string> = {}
-  for (const field of fields) {
-    values[field.name] = field.value ?? ''
-  }
-  formValues.value = values
-}
-
-function checkboxModel(field: SubscribeFormField): boolean {
-  return Boolean(formValues.value[field.name])
-}
-
-function setCheckbox(field: SubscribeFormField, checked: boolean) {
-  formValues.value[field.name] = checked ? (field.value || 'true') : ''
-}
-
-function buildSubmitPayload(): Record<string, string> {
-  const payload: Record<string, string> = { ...formValues.value }
-  for (const field of hiddenFields.value) {
-    payload[field.name] = field.value ?? payload[field.name] ?? ''
-  }
-  return payload
-}
-
-function clearCommentField() {
-  const textarea = form.value?.fields.find((field) => field.type === 'textarea')
-  if (textarea) {
-    formValues.value[textarea.name] = ''
-  }
-}
-
-async function handlePostComment() {
-  if (!props.event) return
-  const ok = await postComment(props.event.id, buildSubmitPayload())
-  if (ok) {
-    clearCommentField()
-    emit('success')
-  }
-}
-
-async function refreshComments() {
-  if (!props.event?.id || loading.value || postingComment.value) return
-  await loadSubscribeForm(props.event.id)
 }
 
 async function handleSubscribe() {
@@ -163,96 +99,36 @@ watch(acceptedTerms, (checked) => {
   if (checked) showTermsError.value = false
 })
 
-function isDeleteCommentAction(anchor: HTMLAnchorElement, href: string): boolean {
-  const label = anchor.textContent?.replace(/\s+/g, ' ').trim() ?? ''
-  if (/^delete comment$/i.test(label) || /^slet\s+kommentar$/i.test(label)) {
-    return true
-  }
-  const lower = href.toLowerCase()
-  return (
-    (/slet|delete|remove/i.test(lower) && /kommentar|comment/i.test(lower))
-    || lower.includes('deletecomment')
-  )
-}
-
-function isInterceptedLink(href: string): boolean {
+function resolveForeningletUrl(href: string): string | null {
   if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) {
-    return false
+    return null
   }
-  if (href.startsWith('/memberportal/')) return true
   try {
     const url = new URL(href, BASE_URL)
-    return url.origin === new URL(BASE_URL).origin && url.pathname.startsWith('/memberportal/')
+    return url.origin === new URL(BASE_URL).origin ? url.href : null
   } catch {
-    return false
+    return null
   }
 }
 
-function applyCommentDeletingState() {
-  const root = commentsHtmlRef.value
-  if (!root) return
-
-  for (const el of root.querySelectorAll('.comment--deleting')) {
-    el.classList.remove('comment--deleting')
-  }
-
-  if (!deletingComment.value || !deletingCommentHref.value) return
-
-  const href = deletingCommentHref.value
-  let target =
-    root.querySelector<HTMLElement>(
-      `.comment[data-delete-href="${CSS.escape(href)}"]`,
-    )
-    ?? null
-
-  if (!target) {
-    for (const link of root.querySelectorAll<HTMLAnchorElement>('a.comment-delete-link')) {
-      if (link.getAttribute('href') === href) {
-        target = link.closest<HTMLElement>('.comment')
-        break
-      }
-    }
-  }
-
-  target?.classList.add('comment--deleting')
-}
-
-async function onSubscribeContentClick(event: MouseEvent) {
+/** Links in the scraped HTML point at Foreninglet; open them there instead of on this site. */
+function onSubscribeContentClick(event: MouseEvent) {
   const anchor = (event.target as HTMLElement).closest('a')
   if (!anchor || !subscribeContentRef.value?.contains(anchor)) return
 
-  const href = anchor.getAttribute('href')
-  if (!href || !isInterceptedLink(href)) return
+  const url = resolveForeningletUrl(anchor.getAttribute('href') ?? '')
+  if (!url) return
 
   event.preventDefault()
   event.stopPropagation()
-
-  if (
-    !props.event?.id
-    || loading.value
-    || postingComment.value
-    || deletingComment.value
-  ) {
-    return
-  }
-
-  const isDelete = isDeleteCommentAction(anchor, href)
-  await followSubscribeLink(props.event.id, href, { deletingComment: isDelete })
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
-
-watch(
-  [deletingComment, deletingCommentHref, () => form.value?.commentsHtml],
-  () => {
-    nextTick(applyCommentDeletingState)
-  },
-)
 
 watch(
   () => props.modelValue,
   async (open) => {
     if (!open) {
       resetSubscribe()
-      formValues.value = {}
       acceptedTerms.value = false
       showTermsError.value = false
       return
@@ -268,15 +144,6 @@ watch(
       void loadSubscribeForm(props.event.id)
     } else {
       await loadSubscribeForm(props.event.id)
-    }
-  },
-)
-
-watch(
-  form,
-  (loaded) => {
-    if (loaded) {
-      initFormValues(loaded.fields)
     }
   },
 )
@@ -471,32 +338,12 @@ watch(
             {{ checkoutError }}
           </v-alert>
 
-          <v-alert
-            v-if="successMessage && !loading"
-            type="success"
-            variant="tonal"
-            class="mb-4"
-            density="compact"
-          >
-            {{ successMessage }}
-          </v-alert>
-
-          <v-alert
-            v-if="postingComment"
-            type="info"
-            variant="tonal"
-            class="mb-4"
-            density="compact"
-          >
-            Posting comment and updating the list…
-          </v-alert>
-
           <template v-if="form">
           <div
             v-if="hasSubscribeContent"
             ref="subscribeContentRef"
             class="mb-4"
-            :class="{ 'subscribe-content--busy': loading || postingComment }"
+            :class="{ 'subscribe-content--busy': loading }"
             @click="onSubscribeContentClick"
           >
             <div
@@ -525,128 +372,16 @@ watch(
               />
             </div>
 
-            <div v-if="form.commentsHtml || commentPending">
-              <div class="d-flex align-center mb-2 ga-2">
-                <div class="text-overline text-medium-emphasis">
-                  Comments
-                </div>
-                <v-spacer />
-                <v-btn
-                  v-if="commentPending"
-                  size="small"
-                  variant="text"
-                  :loading="loading"
-                  :disabled="loading || postingComment"
-                  @click="refreshComments"
-                >
-                  Refresh
-                </v-btn>
+            <div v-if="form.commentsHtml">
+              <div class="text-overline text-medium-emphasis mb-2">
+                Comments
               </div>
               <div
-                v-if="form.commentsHtml"
-                ref="commentsHtmlRef"
                 class="subscribe-comments rounded pa-3"
                 v-html="form.commentsHtml"
               />
-              <v-alert
-                v-else-if="commentPending"
-                type="info"
-                variant="tonal"
-                density="compact"
-              >
-                Your comment was submitted. Refresh to check if it has appeared.
-              </v-alert>
             </div>
           </div>
-
-          <v-form @submit.prevent="handlePostComment">
-            <div class="text-overline text-medium-emphasis mb-2">
-              Add a comment
-            </div>
-            <template
-              v-for="field in visibleFields"
-              :key="field.name"
-            >
-              <v-checkbox
-                v-if="field.type === 'checkbox'"
-                :model-value="checkboxModel(field)"
-                :label="field.label"
-                :disabled="field.disabled || postingComment || loading"
-                hide-details="auto"
-                class="mb-2"
-                @update:model-value="setCheckbox(field, Boolean($event))"
-              />
-
-              <v-radio-group
-                v-else-if="field.type === 'radio' && field.options?.length"
-                v-model="formValues[field.name]"
-                :label="field.label"
-                :disabled="field.disabled || postingComment || loading"
-                hide-details="auto"
-                class="mb-2"
-              >
-                <v-radio
-                  v-for="option in field.options"
-                  :key="`${field.name}-${option.value}`"
-                  :label="option.label"
-                  :value="option.value"
-                />
-              </v-radio-group>
-
-              <v-select
-                v-else-if="field.type === 'select' && field.options?.length"
-                v-model="formValues[field.name]"
-                :label="field.label"
-                :items="field.options"
-                item-title="label"
-                item-value="value"
-                :disabled="field.disabled || postingComment || loading"
-                :required="field.required"
-                variant="outlined"
-                density="comfortable"
-                hide-details="auto"
-                class="mb-2"
-              />
-
-              <v-textarea
-                v-else-if="field.type === 'textarea'"
-                v-model="formValues[field.name]"
-                :label="field.label"
-                :disabled="field.disabled || postingComment || loading"
-                :required="field.required"
-                variant="outlined"
-                density="comfortable"
-                hide-details="auto"
-                rows="3"
-                class="mb-2"
-              />
-
-              <v-text-field
-                v-else
-                v-model="formValues[field.name]"
-                :label="field.label"
-                :type="field.type === 'unknown' ? 'text' : field.type"
-                :disabled="field.disabled || postingComment || loading"
-                :required="field.required"
-                variant="outlined"
-                density="comfortable"
-                hide-details="auto"
-                class="mb-2"
-              />
-            </template>
-
-            <v-btn
-              v-if="visibleFields.length"
-              type="submit"
-              color="primary"
-              variant="flat"
-              class="mt-2"
-              :loading="postingComment"
-              :disabled="loading || postingComment"
-            >
-              {{ postingComment ? 'Posting…' : 'Post comment' }}
-            </v-btn>
-          </v-form>
           </template>
         </template>
 
@@ -676,7 +411,7 @@ watch(
           color="primary"
           variant="flat"
           :loading="checkoutLoading"
-          :disabled="loading || postingComment || checkoutLoading"
+          :disabled="loading || checkoutLoading"
           @click="handleSubscribe"
         >
           Register
@@ -745,43 +480,9 @@ watch(
   border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
-.subscribe-comments :deep(.comment.comment--deleting) {
-  pointer-events: none;
-}
-
-.subscribe-comments :deep(.comment.comment--deleting::after) {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-surface), 0.88);
-}
-
-.subscribe-comments :deep(.comment.comment--deleting::before) {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  z-index: 3;
-  width: 28px;
-  height: 28px;
-  margin: -14px 0 0 -14px;
-  border: 3px solid rgba(var(--v-theme-primary), 0.2);
-  border-top-color: rgb(var(--v-theme-primary));
-  border-radius: 50%;
-  animation: comment-delete-spin 0.75s linear infinite;
-}
-
-@keyframes comment-delete-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
+/* The shared profile's own delete controls must not be shown to visitors. */
 .subscribe-comments :deep(.comment-delete-link) {
-  color: rgb(var(--v-theme-error));
-  font-weight: 500;
+  display: none;
 }
 
 .subscribe-comments :deep(.show-all-comments) {

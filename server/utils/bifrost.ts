@@ -1,15 +1,11 @@
-import type { UserEvent } from "#shared/types/userEvents";
 import {
   ALL_AVAILABLE_EVENTS_URL,
-  AUTOMATIC_PAYMENT_URL,
   BASE_URL,
   DEFAULT_CLUB_ID,
   DO_LOGIN_URL,
-  EVENTS_URL,
   FRONTPAGE_URL,
   LOGIN_URL,
   LOOKUP_URL,
-  PROFILE_URL,
 } from "#shared/constants/foreninglet";
 import type { PaymentCheckout, SubscribeForm } from "#shared/types/subscribe";
 import { subscribeIdentifyUrl, subscribeIndexUrl } from "#shared/constants/foreninglet";
@@ -17,16 +13,12 @@ import {
   htmlHasPaymentCheckout,
   htmlHasSubscribeForm,
   isBifrostLoginPage,
-  parseEnrolledEvents as parseEnrolledEvents,
+  sessionExpiredError,
   parseIdentifySlotFromHtml,
   parsePaymentCheckout,
   parseSubscribeForm,
-  parseCommentPostResult,
   parseUpcomingEvents,
-  parseAutoPaymentStatus,
-  parseUserInfo,
 } from "./bifrost-parse";
-import { UserInfo } from "~~/shared/types/userInfo";
 import { UpcomingEvent } from "~~/shared/types/event";
 
 export interface LookupMember {
@@ -213,18 +205,6 @@ async function lookupMembers(
   return members;
 }
 
-function checkLoginSuccess(text: string, url: string) {
-  const lower = text.toLowerCase();
-  return {
-    urlFrontpage: url.includes("frontpage") || url.includes("dashboard"),
-    htmlLogUd: text.includes("Log ud") || lower.includes("log ud"),
-    htmlMinProfil: text.includes("Min profil") || lower.includes("min profil"),
-    htmlVelkommen: text.includes("Velkommen") || lower.includes("velkommen"),
-    htmlFrontpageLink: lower.includes("memberportal/frontpage"),
-    htmlLogout: lower.includes("log-out") || lower.includes("logout"),
-  };
-}
-
 async function completeLogin(
   member: LookupMember,
   jar: CookieJar,
@@ -264,37 +244,18 @@ async function completeLogin(
     throw new Error(`Login failed (${status}).`);
   }
 
-  const checks = checkLoginSuccess(text, url);
-  bifrostLog("completeLogin:response", {
-    status,
-    finalUrl: url,
-    bodyLength: text.length,
-    titleMatch: text.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim(),
-    preview: text.replace(/\s+/g, " ").slice(0, 400),
-    checks,
-    ...jarSnapshot(jar),
-  });
-
-  if (Object.values(checks).some(Boolean)) {
-    bifrostLog("completeLogin:success", { reason: "response-checks" });
-    return true;
+  if (isBifrostLoginPage(text, url)) {
+    bifrostLog("completeLogin:failed", { reason: "login-page-returned", finalUrl: url });
+    return false;
   }
 
+  // The dologin response itself is not conclusive, so confirm on a members-only page.
   const sessionOk = await verifyBifrostSession(jar);
-  bifrostLog("completeLogin:frontpageVerify", {
-    sessionOk,
+  bifrostLog(sessionOk ? "completeLogin:success" : "completeLogin:failed", {
+    finalUrl: url,
     ...jarSnapshot(jar),
   });
-
-  if (sessionOk) {
-    bifrostLog("completeLogin:success", { reason: "frontpage-verify" });
-    return true;
-  }
-
-  bifrostLog("completeLogin:failed", {
-    hint: "No URL/HTML match and frontpage verify failed. See preview above.",
-  });
-  return false;
+  return sessionOk;
 }
 
 export async function bifrostLogin(
@@ -335,7 +296,7 @@ export async function bifrostLogin(
     throw createError({
       statusCode: 401,
       statusMessage:
-        "Login could not be confirmed. Check the terminal running `npm run dev` for [bifrost] logs.",
+        "Foreninglet did not accept the login.",
     });
   }
 
@@ -352,7 +313,9 @@ export async function verifyBifrostSession(jar: CookieJar): Promise<boolean> {
     return false;
   }
 
-  const { status, text, url } = await bifrostFetch(FRONTPAGE_URL, jar, {
+  // The front page is public, but the activity search redirects to the login page
+  // when the session is not authenticated.
+  const { status, text, url } = await bifrostFetch(ALL_AVAILABLE_EVENTS_URL, jar, {
     headers: DEFAULT_HEADERS,
   });
 
@@ -361,90 +324,15 @@ export async function verifyBifrostSession(jar: CookieJar): Promise<boolean> {
     return false;
   }
 
-  const checks = checkLoginSuccess(text, url);
-  const ok = Object.values(checks).some(Boolean);
-  bifrostLog("verify:result", {
-    ok,
-    checks,
-    finalUrl: url,
-    bodyLength: text.length,
-  });
+  const ok = !isBifrostLoginPage(text, url);
+  bifrostLog("verify:result", { ok, finalUrl: url, bodyLength: text.length });
   return ok;
-}
-
-export async function fetchUserEvents(jar: CookieJar): Promise<UserEvent[]> {
-  const { status, text } = await bifrostFetch(EVENTS_URL, jar, {
-    headers: {
-      ...DEFAULT_HEADERS,
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      Referer: FRONTPAGE_URL,
-    },
-  });
-
-  if (status === 401 || status === 403) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
-  }
-
-  if (status < 200 || status >= 400) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: `Bifrost request failed (${status}).`,
-    });
-  }
-
-  return parseEnrolledEvents(text);
-}
-
-export async function fetchUserInfo(jar: CookieJar): Promise<UserInfo> {
-  const { status, text } = await bifrostFetch(PROFILE_URL, jar, {
-    headers: {
-      ...DEFAULT_HEADERS,
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      Referer: FRONTPAGE_URL,
-    },
-  });
-
-  if (status === 401 || status === 403) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
-  }
-
-  if (status < 200 || status >= 400) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: `Bifrost request failed (${status}).`,
-    });
-  }
-
-  return parseUserInfo(text);
-}
-
-export async function fetchAutoPaymentStatus(jar: CookieJar): Promise<boolean> {
-  const { status, text } = await bifrostFetch(AUTOMATIC_PAYMENT_URL, jar, {
-    headers: {
-      ...DEFAULT_HEADERS,
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      Referer: FRONTPAGE_URL,
-    },
-  });
-
-  if (status === 401 || status === 403) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
-  }
-
-  if (status < 200 || status >= 400) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: `Bifrost request failed (${status}).`,
-    });
-  }
-
-  return parseAutoPaymentStatus(text);
 }
 
 export async function fetchUpcomingEvents(
   jar: CookieJar,
 ): Promise<UpcomingEvent[]> {
-  const { status, text } = await bifrostFetch(ALL_AVAILABLE_EVENTS_URL, jar, {
+  const { status, text, url } = await bifrostFetch(ALL_AVAILABLE_EVENTS_URL, jar, {
     headers: {
       ...DEFAULT_HEADERS,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -452,8 +340,8 @@ export async function fetchUpcomingEvents(
     },
   });
 
-  if (status === 401 || status === 403) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
+  if (status === 401 || status === 403 || isBifrostLoginPage(text, url)) {
+    throw sessionExpiredError();
   }
 
   if (status < 200 || status >= 400) {
@@ -468,91 +356,6 @@ export async function fetchUpcomingEvents(
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function normalizeMatchText(text: string): string {
-  return text.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function commentsHtmlIncludesText(
-  commentsHtml: string | undefined,
-  commentText: string,
-): boolean {
-  const needle = normalizeMatchText(commentText);
-  if (!needle) return true;
-  if (!commentsHtml) return false;
-  const haystack = normalizeMatchText(commentsHtml.replace(/<[^>]+>/g, " "));
-  return haystack.includes(needle);
-}
-
-function extractCommentText(
-  fields: Record<string, string>,
-  form: SubscribeForm,
-): string {
-  const textarea = form.fields.find((field) => field.type === "textarea");
-  if (textarea?.name) {
-    const value = fields[textarea.name]?.trim();
-    if (value) return value;
-  }
-
-  let longest = "";
-  for (const value of Object.values(fields)) {
-    const trimmed = value.trim();
-    if (trimmed.length > longest.length) {
-      longest = trimmed;
-    }
-  }
-  return longest;
-}
-
-async function refreshSubscribeFormAfterComment(
-  jar: CookieJar,
-  activityId: string,
-  commentText: string,
-  postResponseHtml?: string,
-): Promise<{ form: SubscribeForm; commentVisible: boolean }> {
-  const pageUrl = subscribeIndexUrl(activityId);
-
-  if (postResponseHtml && htmlHasSubscribeForm(postResponseHtml)) {
-    try {
-      const parsed = parseSubscribeForm(postResponseHtml, pageUrl);
-      if (commentsHtmlIncludesText(parsed.commentsHtml, commentText)) {
-        return { form: parsed, commentVisible: true };
-      }
-    } catch {
-      // Fall through to refetch polling
-    }
-  }
-
-  const pollDelaysMs = [400, 500, 600, 700, 800, 1000, 1200, 1500];
-  let lastForm: SubscribeForm | undefined;
-
-  for (let attempt = 0; attempt < pollDelaysMs.length; attempt++) {
-    if (attempt > 0) {
-      await delay(pollDelaysMs[attempt - 1] ?? 800);
-    }
-
-    lastForm = await fetchSubscribeForm(jar, activityId, {
-      referer: pageUrl,
-      attempts: 1,
-    });
-
-    if (commentsHtmlIncludesText(lastForm.commentsHtml, commentText)) {
-      return { form: lastForm, commentVisible: true };
-    }
-  }
-
-  if (!lastForm) {
-    lastForm = await fetchSubscribeForm(jar, activityId, {
-      referer: pageUrl,
-      attempts: 2,
-    });
-  }
-
-  return {
-    form: lastForm,
-    commentVisible: commentsHtmlIncludesText(lastForm.commentsHtml, commentText),
-  };
 }
 
 function isRetryableSubscribeError(error: unknown): boolean {
@@ -592,7 +395,7 @@ export async function fetchPaymentCheckout(
   const pageUrl = subscribeIdentifyUrl(activityId, slot);
   const referer = options?.referer ?? subscribeIndexUrl(activityId);
 
-  const { status, text } = await bifrostFetch(pageUrl, jar, {
+  const { status, text, url } = await bifrostFetch(pageUrl, jar, {
     headers: {
       ...DEFAULT_HEADERS,
       Accept:
@@ -601,8 +404,8 @@ export async function fetchPaymentCheckout(
     },
   });
 
-  if (status === 401 || status === 403 || isBifrostLoginPage(text)) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
+  if (status === 401 || status === 403 || isBifrostLoginPage(text, url)) {
+    throw sessionExpiredError();
   }
 
   if (status < 200 || status >= 400) {
@@ -646,7 +449,7 @@ export async function fetchSubscribeForm(
     }
 
     try {
-      const { status, text } = await bifrostFetch(pageUrl, jar, {
+      const { status, text, url } = await bifrostFetch(pageUrl, jar, {
         headers: {
           ...DEFAULT_HEADERS,
           Accept:
@@ -655,11 +458,8 @@ export async function fetchSubscribeForm(
         },
       });
 
-      if (status === 401 || status === 403 || isBifrostLoginPage(text)) {
-        throw createError({
-          statusCode: 401,
-          statusMessage: "Session expired.",
-        });
+      if (status === 401 || status === 403 || isBifrostLoginPage(text, url)) {
+        throw sessionExpiredError();
       }
 
       if (status < 200 || status >= 400) {
@@ -679,145 +479,4 @@ export async function fetchSubscribeForm(
   }
 
   throw lastError;
-}
-
-export function isAllowedBifrostUrl(url: string): boolean {
-  try {
-    const resolved = url.startsWith("http")
-      ? new URL(url)
-      : new URL(url, BASE_URL);
-    const base = new URL(BASE_URL);
-    return (
-      resolved.origin === base.origin
-      && resolved.pathname.startsWith("/memberportal/")
-    );
-  } catch {
-    return false;
-  }
-}
-
-export async function followBifrostLink(
-  jar: CookieJar,
-  url: string,
-  referer: string,
-  activityId: string,
-): Promise<SubscribeForm> {
-  if (!isAllowedBifrostUrl(url)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: "That link cannot be opened from the app.",
-    });
-  }
-
-  const resolved = url.startsWith("http") ? url : new URL(url, BASE_URL).href;
-  const subscribePageUrl = subscribeIndexUrl(activityId);
-
-  // Foreninglet delete controls are plain <a href="..."> links — use GET, not POST
-  const { status, text, url: finalUrl } = await bifrostFetch(resolved, jar, {
-    method: "GET",
-    headers: {
-      ...DEFAULT_HEADERS,
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      Referer: referer,
-    },
-  });
-
-  if (status === 401 || status === 403 || isBifrostLoginPage(text)) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
-  }
-
-  if (status < 200 || status >= 400) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: `Request failed (${status}).`,
-    });
-  }
-
-  // Use the action response when it already contains the sign-up form
-  if (htmlHasSubscribeForm(text)) {
-    try {
-      return parseSubscribeForm(text, finalUrl || subscribePageUrl);
-    } catch (error) {
-      if (!isRetryableSubscribeError(error)) throw error;
-    }
-  }
-
-  // Foreninglet may need a moment before the sign-up page is ready again after delete
-  return fetchSubscribeForm(jar, activityId, {
-    referer: subscribePageUrl,
-    attempts: 4,
-  });
-}
-
-export async function postActivityComment(
-  jar: CookieJar,
-  activityId: string,
-  fields: Record<string, string>,
-): Promise<{
-  success: boolean;
-  message: string;
-  form?: SubscribeForm;
-  commentPending?: boolean;
-}> {
-  const pageUrl = subscribeIndexUrl(activityId);
-  const form = await fetchSubscribeForm(jar, activityId);
-  const commentText = extractCommentText(fields, form);
-
-  const body = new URLSearchParams();
-  for (const field of form.fields) {
-    if (field.name in fields) {
-      body.set(field.name, fields[field.name] ?? "");
-    } else if (field.type === "checkbox") {
-      body.set(field.name, field.value || "");
-    } else if (field.value) {
-      body.set(field.name, field.value);
-    }
-  }
-
-  for (const [key, value] of Object.entries(fields)) {
-    if (!body.has(key)) {
-      body.set(key, value);
-    }
-  }
-
-  const { status, text } = await bifrostFetch(form.action, jar, {
-    method: form.method,
-    headers: {
-      ...portalHeaders({ Referer: pageUrl }),
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-    body: body.toString(),
-    redirect: "follow",
-  });
-
-  if (status === 401 || status === 403) {
-    throw createError({ statusCode: 401, statusMessage: "Session expired." });
-  }
-
-  if (status < 200 || status >= 500) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: `Comment request failed (${status}).`,
-    });
-  }
-
-  const result = parseCommentPostResult(text);
-  if (!result.success) {
-    return result;
-  }
-
-  const { form: refreshedForm, commentVisible } =
-    await refreshSubscribeFormAfterComment(jar, activityId, commentText, text);
-
-  const message = commentVisible
-    ? result.message
-    : `${result.message} It may take a moment to appear in the list.`;
-
-  return {
-    success: true,
-    message,
-    form: refreshedForm,
-    commentPending: !commentVisible,
-  };
 }

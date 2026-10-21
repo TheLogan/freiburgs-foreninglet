@@ -2,23 +2,14 @@
   <v-container class="py-6">
     <header class="mb-6">
       <h1 class="text-h4 font-weight-medium mb-1">
-        Dashboard
+        Events
       </h1>
       <p class="text-body-2 text-medium-emphasis mb-0">
-        Your Foreninglet profile and enrolled events.
+        Upcoming Freiburgs events from Foreninglet.
       </p>
     </header>
 
     <v-row>
-      <v-col cols="12" lg="5">
-        <UserInfo />
-      </v-col>
-      <v-col cols="12" lg="7">
-        <UserEvents />
-      </v-col>
-    </v-row>
-
-    <v-row class="mt-4">
       <v-col cols="12">
         <UpcomingEvents />
       </v-col>
