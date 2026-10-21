@@ -66,15 +66,6 @@ function close() {
   emit('update:modelValue', false)
 }
 
-async function handleSubscribe() {
-  if (!props.event?.id || props.event.status !== 'available') return
-  const ok = await loadPaymentCheckout(props.event.id)
-  if (ok) {
-    acceptedTerms.value = false
-    showTermsError.value = false
-  }
-}
-
 function backToDetails() {
   clearCheckout()
   acceptedTerms.value = false
@@ -410,9 +401,10 @@ watch(
           v-else-if="event.status === 'available'"
           color="primary"
           variant="flat"
-          :loading="checkoutLoading"
-          :disabled="loading || checkoutLoading"
-          @click="handleSubscribe"
+          :href="event.subscribeUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          append-icon="mdi-open-in-new"
         >
           Register
         </v-btn>

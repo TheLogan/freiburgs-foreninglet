@@ -76,12 +76,14 @@ export function parseUpcomingEvents(html: string): UpcomingEvent[] {
   // The activity/search page returns a table of simple anchor links, one per row.
   const links = $('a[href*="/memberportal/subscribe/index/"]');
   if (!links.length) {
+    // No matches is a valid result as long as we got the search page itself.
+    if ($('input[name="start_date"]').length) return [];
     throw createError({
       statusCode: 502,
       statusMessage: "Activity list not found on Foreninglet page.",
     });
   }
-  return links
+  const events = links
     .map((_, el) => {
       const $a = $(el);
       const href = $a.attr("href") ?? "";
@@ -104,6 +106,74 @@ export function parseUpcomingEvents(html: string): UpcomingEvent[] {
     })
     .get()
     .filter((e) => e !== null);
+
+  // Foreninglet sorts alphabetically; show the soonest event first.
+  return events.sort(
+    (a, b) => danishDateSortKey(a.startDate) - danishDateSortKey(b.startDate),
+  );
+}
+
+export type EventDetails = Pick<
+  UpcomingEvent,
+  "status" | "price" | "startDate" | "dateRange" | "location" | "seats"
+>;
+
+/** Reads price, dates, location and free places from an event's subscribe/index page. */
+export function parseEventDetails(html: string): Partial<EventDetails> {
+  const $ = cheerio.load(html);
+  const $meta = $(".glyphicon-calendar").first().closest(".row");
+  const lines = $meta
+    .find(".col-lg-4 > div")
+    .map((_, el) => $(el).text().replace(/\s+/g, " ").trim())
+    .get()
+    .filter(Boolean);
+  const valueAfter = (label: string) =>
+    lines
+      .find((line) => line.toLowerCase().startsWith(label.toLowerCase()))
+      ?.slice(label.length)
+      .trim() || undefined;
+
+  const details: Partial<EventDetails> = {};
+
+  // Multi-day events have "Startdato:/Slutdato:" lines; single-day ones only "dd/mm-yyyy" + time,
+  // in which case the search list's start date is already the more readable version.
+  const start = valueAfter("Startdato:");
+  const end = valueAfter("Slutdato:");
+  if (start) details.startDate = start;
+  if (start && end) details.dateRange = `${start} - ${end}`;
+
+  details.price = valueAfter("Pris:");
+
+  details.location =
+    valueAfter("Mødested:")
+    || $meta.find(".icon-map-marker1").first().parent().text().replace(/\s+/g, " ").trim()
+    || undefined;
+
+  const seatsLine = lines.find((line) => /ledige pladser/i.test(line));
+  const freeSeats = seatsLine?.match(/(-?\d+)\s+ledige pladser/i)?.[1];
+  const canBuy = $('a[href*="/memberportal/subscribe/identify/"]').length > 0;
+  details.seats = seatsLine;
+  details.status =
+    freeSeats !== undefined && Number(freeSeats) <= 0
+      ? "sold_out"
+      : canBuy
+        ? "available"
+        : "unknown";
+
+  return details;
+}
+
+const DANISH_MONTHS: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, maj: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, okt: 9, nov: 10, dec: 11,
+};
+
+/** Sort key for dates like "7. nov. 2026, kl. 17:00"; unparseable dates sort last. */
+function danishDateSortKey(text: string | undefined): number {
+  const match = text?.match(/(\d{1,2})\.\s*([a-zæøå]+)\.?\s+(\d{4})(?:,\s*kl\.\s*(\d{1,2}):(\d{2}))?/i);
+  const month = match ? DANISH_MONTHS[match[2]!.slice(0, 3).toLowerCase()] : undefined;
+  if (!match || month === undefined) return Number.MAX_SAFE_INTEGER;
+  return Date.UTC(Number(match[3]), month, Number(match[1]), Number(match[4] ?? 0), Number(match[5] ?? 0));
 }
 
 function resolveUrl(href: string, baseUrl: string): string {

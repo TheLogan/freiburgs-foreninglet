@@ -18,6 +18,7 @@ import {
   parsePaymentCheckout,
   parseSubscribeForm,
   parseUpcomingEvents,
+  parseEventDetails,
 } from "./bifrost-parse";
 import { UpcomingEvent } from "~~/shared/types/event";
 
@@ -329,15 +330,36 @@ export async function verifyBifrostSession(jar: CookieJar): Promise<boolean> {
   return ok;
 }
 
+/** Today's date as dd-mm-yyyy (the activity search form's format), in Danish time. */
+function todayInCopenhagen(): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Copenhagen",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("day")}-${get("month")}-${get("year")}`;
+}
+
 export async function fetchUpcomingEvents(
   jar: CookieJar,
 ): Promise<UpcomingEvent[]> {
+  // A plain GET lists past events too; the search form's start_date filters server-side.
+  const body = new URLSearchParams({
+    name: "",
+    start_date: todayInCopenhagen(),
+    end_date: "",
+  }).toString();
+
   const { status, text, url } = await bifrostFetch(ALL_AVAILABLE_EVENTS_URL, jar, {
+    method: "POST",
     headers: {
-      ...DEFAULT_HEADERS,
+      ...portalHeaders({ Referer: ALL_AVAILABLE_EVENTS_URL }),
+      "Content-Type": "application/x-www-form-urlencoded",
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      Referer: FRONTPAGE_URL,
     },
+    body,
   });
 
   if (status === 401 || status === 403 || isBifrostLoginPage(text, url)) {
@@ -351,7 +373,33 @@ export async function fetchUpcomingEvents(
     });
   }
 
-  return parseUpcomingEvents(text);
+  const events = parseUpcomingEvents(text);
+
+  // The search list only has name and start date; each event's own page has price, location and places.
+  return Promise.all(
+    events.map(async (event) => {
+      try {
+        const page = await bifrostFetch(subscribeIndexUrl(event.id), jar, {
+          headers: {
+            ...DEFAULT_HEADERS,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            Referer: ALL_AVAILABLE_EVENTS_URL,
+          },
+        });
+        if (page.status < 200 || page.status >= 400) return event;
+        return { ...event, ...withoutUndefined(parseEventDetails(page.text)) };
+      } catch (error) {
+        bifrostLog("upcoming:detailsFailed", { id: event.id, error: String(error) });
+        return event;
+      }
+    }),
+  );
+}
+
+function withoutUndefined<T extends object>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
 }
 
 function delay(ms: number) {

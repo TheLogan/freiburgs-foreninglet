@@ -170,19 +170,26 @@ onMounted(getUpcomingEvents);
       class="upcoming-events-table"
     >
       <template #item.name="{ item }">
-          <v-btn variant="flat" @click="openSubscribe(item)">
-            <span class="font-weight-medium d-block">{{ item.name }}</span>
-            <span
-              v-if="item.instructor"
-              class="text-caption text-medium-emphasis"
-            >
-              {{ item.instructor }}
-            </span>
-            <span
-              v-if="item.seats"
-              class="text-caption text-medium-emphasis d-block"
-            >
-              {{ item.seats }}
+          <v-btn
+            variant="flat"
+            height="auto"
+            class="py-2"
+            @click="openSubscribe(item)"
+          >
+            <span class="d-flex flex-column align-start text-left ga-1">
+              <span class="font-weight-medium">{{ item.name }}</span>
+              <span
+                v-if="item.instructor"
+                class="text-caption text-medium-emphasis"
+              >
+                {{ item.instructor }}
+              </span>
+              <span
+                v-if="item.seats"
+                class="text-caption text-medium-emphasis"
+              >
+                {{ item.seats }}
+              </span>
             </span>
           </v-btn>
       </template>
@@ -227,7 +234,10 @@ onMounted(getUpcomingEvents);
           size="small"
           variant="tonal"
           color="primary"
-          @click="openSubscribe(item, { checkout: true })"
+          :href="item.subscribeUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          append-icon="mdi-open-in-new"
         >
           Register
         </v-btn>
