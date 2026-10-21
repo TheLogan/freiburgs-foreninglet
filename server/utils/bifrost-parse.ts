@@ -115,7 +115,7 @@ export function parseUpcomingEvents(html: string): UpcomingEvent[] {
 
 export type EventDetails = Pick<
   UpcomingEvent,
-  "status" | "price" | "startDate" | "dateRange" | "location" | "seats"
+  "status" | "price" | "startDate" | "dateRange" | "location" | "seats" | "signupDeadline"
 >;
 
 /** Reads price, dates, location and free places from an event's subscribe/index page. */
@@ -143,6 +143,14 @@ export function parseEventDetails(html: string): Partial<EventDetails> {
   if (start && end) details.dateRange = `${start} - ${end}`;
 
   details.price = valueAfter("Pris:");
+
+  $(".activity-extra-info").each((_, el) => {
+    const $info = $(el);
+    if ($info.find(".card-title").text().trim().toLowerCase() === "tilmeldingsfrist") {
+      details.signupDeadline =
+        $info.find(".card-text").text().replace(/\s+/g, " ").trim() || undefined;
+    }
+  });
 
   details.location =
     valueAfter("Mødested:")

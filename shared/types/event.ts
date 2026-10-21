@@ -8,6 +8,7 @@ export interface UpcomingEvent {
   location?: string
   instructor?: string
   seats?: string          // e.g. "22 ledige pladser"
+  signupDeadline?: string // "Tilmeldingsfrist", e.g. "23. okt. 2026, kl. 23:45"
   subscribeUrl: string
 }
 

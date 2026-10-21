@@ -3,265 +3,301 @@ import type { UpcomingEvent } from "#shared/types/event";
 
 const { events, loading, error, getUpcomingEvents } = useUpcomingEvents();
 
-const subscribeModalOpen = ref(false);
-const selectedEvent = ref<UpcomingEvent | null>(null);
-const subscribeStartAtCheckout = ref(false);
+const openEventId = ref<string | null>(null);
 
-function openSubscribe(
-  event: UpcomingEvent,
-  options?: { checkout?: boolean },
-) {
-  selectedEvent.value = event;
-  subscribeStartAtCheckout.value = options?.checkout ?? false;
-  subscribeModalOpen.value = true;
+function toggleDetails(id: string) {
+  openEventId.value = openEventId.value === id ? null : id;
 }
 
-watch(subscribeModalOpen, (open) => {
-  if (!open) subscribeStartAtCheckout.value = false;
-});
-
-const search = ref("");
-const page = ref(1);
-const itemsPerPage = ref(25);
-
-const itemsPerPageOptions = [
-  { value: 10, title: "10" },
-  { value: 25, title: "25" },
-  { value: 50, title: "50" },
-  { value: 100, title: "100" },
-] as const;
-
-const headers = [
-  { title: "Event", key: "name", minWidth: "180px" },
-  { title: "Dates", key: "dates", minWidth: "160px" },
-  { title: "Location", key: "location", minWidth: "140px" },
-  { title: "Price", key: "price", width: "120px" },
-  { title: "Status", key: "status", width: "120px" },
-  { title: "", key: "actions", width: "100px", sortable: false },
-] as const;
-
-const eventCount = computed(() => events.value.length);
-
-const filteredEvents = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  if (!q) return events.value;
-
-  return events.value.filter((event) => {
-    const haystack = [
-      event.name,
-      event.location,
-      event.instructor,
-      event.price,
-      event.seats,
-      event.dateRange,
-      event.startDate,
-      statusLabel(event.status),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-
-    return haystack.includes(q);
-  });
-});
-
-const filteredCount = computed(() => filteredEvents.value.length);
-
-const noDataText = computed(() =>
-  search.value.trim()
-    ? "No events match your search."
-    : "No upcoming events found.",
-);
-
-function displayDates(event: UpcomingEvent): string {
-  return event.dateRange ?? event.startDate ?? "—";
+/** Day and short month for the date tile, from e.g. "7. nov. 2026, kl. 17:00". */
+function dateTile(event: UpcomingEvent): { day: string; month: string } | null {
+  const match = event.startDate?.match(/^(\d{1,2})\.\s*([a-zæøå]+)/i);
+  if (!match) return null;
+  return { day: match[1]!, month: match[2]!.slice(0, 3) };
 }
 
-function statusLabel(status: UpcomingEvent["status"]): string {
-  if (status === "available") return "Available";
-  if (status === "sold_out") return "Sold out";
-  return "Unknown";
+function displayDates(event: UpcomingEvent): string | undefined {
+  return event.dateRange ?? event.startDate;
 }
 
-function statusColor(status: UpcomingEvent["status"]): string {
-  if (status === "available") return "success";
-  if (status === "sold_out") return "error";
-  return "default";
-}
-
-watch(search, () => {
-  page.value = 1;
-});
-
-onMounted(getUpcomingEvents);
+// Render the list on the server so the embed shows events immediately instead of a loading state.
+await callOnce("upcoming-events", getUpcomingEvents);
 </script>
 
 <template>
-  <v-card class="upcoming-events-card" elevation="1">
-    <v-card-title class="d-flex align-center flex-wrap ga-2 py-4">
-      <v-icon icon="mdi-calendar-star" class="mr-1" color="primary" />
-      <span>Upcoming events</span>
-      <v-chip
-        v-if="!loading && eventCount > 0"
-        size="small"
-        variant="tonal"
-        color="primary"
-      >
-        {{ eventCount }}
-      </v-chip>
-      <v-spacer />
-      <v-progress-circular
-        v-if="loading"
-        indeterminate
-        size="22"
-        width="2"
-        color="primary"
-      />
-    </v-card-title>
-
-    <v-card-subtitle class="pb-0">
-      Open activities you can register for on Foreninglet
-    </v-card-subtitle>
-
-    <v-card-text v-if="eventCount > 0 || search" class="pt-4 pb-0">
-      <v-text-field
-        v-model="search"
-        prepend-inner-icon="mdi-magnify"
-        label="Search events"
-        placeholder="Name, location, instructor, dates…"
-        clearable
-        hide-details
-        density="comfortable"
-        variant="outlined"
-      />
-      <p
-        v-if="search.trim()"
-        class="text-caption text-medium-emphasis mt-2 mb-0"
-      >
-        Showing {{ filteredCount }} of {{ eventCount }} events
+  <section class="events" aria-labelledby="events-title">
+    <header class="events__header">
+      <h2 id="events-title" class="events__title">
+        Upcoming events
+      </h2>
+      <p class="events__lead">
+        Sign-up and payment happen on Foreninglet.
       </p>
-    </v-card-text>
-
-    <v-divider class="mt-3" />
+    </header>
 
     <v-alert
       v-if="error"
       type="error"
       variant="tonal"
-      class="ma-4"
+      class="mb-4"
       density="compact"
       role="alert"
     >
       {{ error }}
     </v-alert>
 
-    <v-data-table
-      v-model:page="page"
-      v-model:items-per-page="itemsPerPage"
-      :headers="headers"
-      :items="filteredEvents"
-      :items-per-page-options="itemsPerPageOptions"
-      :loading="loading"
-      :loading-text="loading ? 'Loading upcoming events…' : undefined"
-      :no-data-text="noDataText"
-      item-value="id"
-      hover
-      density="comfortable"
-      class="upcoming-events-table"
+    <template v-if="loading && !events.length">
+      <v-skeleton-loader
+        v-for="n in 2"
+        :key="n"
+        type="list-item-avatar-three-line"
+        class="event-card mb-3"
+      />
+    </template>
+
+    <p
+      v-else-if="!error && !events.length"
+      class="events__empty"
     >
-      <template #item.name="{ item }">
-          <v-btn
-            variant="flat"
-            height="auto"
-            class="py-2"
-            @click="openSubscribe(item)"
+      No upcoming events right now. Check back later.
+    </p>
+
+    <article
+      v-for="event in events"
+      :key="event.id"
+      class="event-card"
+      :class="{ 'event-card--open': openEventId === event.id }"
+    >
+      <div class="event-card__main">
+        <div
+          v-if="dateTile(event)"
+          class="event-card__date"
+          aria-hidden="true"
+        >
+          <span class="event-card__day">{{ dateTile(event)!.day }}</span>
+          <span class="event-card__month">{{ dateTile(event)!.month }}</span>
+        </div>
+
+        <div class="event-card__body">
+          <h3 class="event-card__name">
+            {{ event.name }}
+          </h3>
+          <ul class="event-card__meta">
+            <li v-if="displayDates(event)">
+              <v-icon icon="mdi-calendar-outline" size="16" />
+              {{ displayDates(event) }}
+            </li>
+            <li v-if="event.location">
+              <v-icon icon="mdi-map-marker-outline" size="16" />
+              {{ event.location }}
+            </li>
+            <li v-if="event.price">
+              <v-icon icon="mdi-ticket-outline" size="16" />
+              {{ event.price }}
+            </li>
+          </ul>
+          <p
+            v-if="event.seats || event.signupDeadline"
+            class="event-card__seats"
           >
-            <span class="d-flex flex-column align-start text-left ga-1">
-              <span class="font-weight-medium">{{ item.name }}</span>
-              <span
-                v-if="item.instructor"
-                class="text-caption text-medium-emphasis"
-              >
-                {{ item.instructor }}
-              </span>
-              <span
-                v-if="item.seats"
-                class="text-caption text-medium-emphasis"
-              >
-                {{ item.seats }}
-              </span>
-            </span>
+            <span v-if="event.seats">{{ event.seats }}</span>
+            <span v-if="event.seats && event.signupDeadline"> · </span>
+            <span v-if="event.signupDeadline">Sign up by {{ event.signupDeadline }}</span>
+          </p>
+        </div>
+
+        <div class="event-card__actions">
+          <v-chip
+            v-if="event.status === 'sold_out'"
+            color="error"
+            variant="tonal"
+            size="small"
+            label
+          >
+            Sold out
+          </v-chip>
+          <v-btn
+            v-else-if="event.status === 'available'"
+            color="secondary"
+            variant="flat"
+            :href="event.subscribeUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            append-icon="mdi-open-in-new"
+          >
+            Register
           </v-btn>
-      </template>
+          <v-btn
+            variant="text"
+            color="primary"
+            :append-icon="openEventId === event.id ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+            :aria-expanded="openEventId === event.id"
+            :aria-controls="`event-details-${event.id}`"
+            @click="toggleDetails(event.id)"
+          >
+            Details
+          </v-btn>
+        </div>
+      </div>
 
-      <template #item.dates="{ item }">
-        <v-chip
-          v-if="displayDates(item) !== '—'"
-          size="small"
-          variant="tonal"
-          prepend-icon="mdi-calendar-outline"
-          label
+      <v-expand-transition>
+        <div
+          v-if="openEventId === event.id"
+          :id="`event-details-${event.id}`"
+          class="event-card__details"
         >
-          {{ displayDates(item) }}
-        </v-chip>
-        <span v-else class="text-medium-emphasis">—</span>
-      </template>
-
-      <template #item.location="{ value }">
-        <span v-if="value" class="text-body-2">{{ value }}</span>
-        <span v-else class="text-medium-emphasis">—</span>
-      </template>
-
-      <template #item.price="{ value }">
-        <span v-if="value" class="text-body-2">{{ value }}</span>
-        <span v-else class="text-medium-emphasis">—</span>
-      </template>
-
-      <template #item.status="{ item }">
-        <v-chip
-          :color="statusColor(item.status)"
-          size="small"
-          variant="tonal"
-          label
-        >
-          {{ statusLabel(item.status) }}
-        </v-chip>
-      </template>
-
-      <template #item.actions="{ item }">
-        <v-btn
-          v-if="item.status === 'available'"
-          size="small"
-          variant="tonal"
-          color="primary"
-          :href="item.subscribeUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          append-icon="mdi-open-in-new"
-        >
-          Register
-        </v-btn>
-      </template>
-    </v-data-table>
-
-    <UpcomingEventModal
-      v-model="subscribeModalOpen"
-      :event="selectedEvent"
-      :start-at-checkout="subscribeStartAtCheckout"
-    />
-  </v-card>
+          <EventDetails :event-id="event.id" />
+        </div>
+      </v-expand-transition>
+    </article>
+  </section>
 </template>
 
 <style scoped>
-.upcoming-events-table :deep(thead th) {
-  font-weight: 600;
+.events {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.events__header {
+  margin-bottom: 24px;
+}
+
+.events__title {
+  display: inline-block;
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1.3;
+  padding-bottom: 6px;
+  /* Same yellow underline as the active item in the site's navigation. */
+  border-bottom: 4px solid rgb(var(--v-theme-secondary));
+}
+
+.events__lead {
+  margin: 8px 0 0;
+  color: rgba(var(--v-theme-on-background), 0.7);
+}
+
+.events__empty {
+  padding: 32px 0;
+  color: rgba(var(--v-theme-on-background), 0.7);
+}
+
+.event-card {
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgb(var(--v-theme-divider));
+  border-radius: 4px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.event-card--open {
+  border-left: 4px solid rgb(var(--v-theme-secondary));
+}
+
+.event-card__main {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px 20px;
+  align-items: center;
+  padding: 16px 20px;
+}
+
+.event-card__date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 4px;
+  background: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-on-primary));
+  line-height: 1;
+}
+
+.event-card__day {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.event-card__month {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
+  color: rgb(var(--v-theme-secondary));
+}
+
+.event-card__name {
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.35;
+  margin: 0 0 6px;
+}
+
+.event-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  color: rgba(var(--v-theme-on-surface), 0.8);
+}
+
+.event-card__meta li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.event-card__seats {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
   color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
-.upcoming-events-table :deep(tbody tr:hover) {
-  background: rgba(var(--v-theme-primary), 0.04);
+.event-card__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.event-card__details {
+  border-top: 1px solid rgb(var(--v-theme-divider));
+  padding: 16px 20px 20px;
+}
+
+@media (max-width: 600px) {
+  .event-card__main {
+    grid-template-columns: auto 1fr;
+    align-items: start;
+    gap: 12px 16px;
+    padding: 16px;
+  }
+
+  .event-card__date {
+    width: 52px;
+    height: 52px;
+  }
+
+  .event-card__day {
+    font-size: 1.3rem;
+  }
+
+  .event-card__actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .event-card__details {
+    padding: 16px;
+  }
 }
 </style>

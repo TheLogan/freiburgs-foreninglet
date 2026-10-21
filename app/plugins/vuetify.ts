@@ -2,22 +2,21 @@ import '@mdi/font/css/materialdesignicons.css'
 import 'vuetify/styles'
 import { createVuetify } from 'vuetify'
 
-const dark = {
-  dark: true,
-  colors: {
-    background: '#121212',
-    surface: '#1e1e1e',
-    primary: '#90caf9',
-    secondary: '#ce93d8',
-    error: '#f44336',
-  },
-}
-
-const light = {
+// Colours taken from the Freiburg Google Sites page this app is embedded in.
+const freiburg = {
   dark: false,
   colors: {
-    primary: '#1565c0',
-    secondary: '#7b1fa2',
+    background: '#f5f2f0',
+    surface: '#ffffff',
+    'surface-variant': '#4f474e',
+    primary: '#4f474e',
+    'on-primary': '#ffffff',
+    secondary: '#ffd54f',
+    'on-secondary': '#1a1a1a',
+    'on-background': '#1a1a1a',
+    'on-surface': '#1a1a1a',
+    error: '#b3261e',
+    divider: '#d0cdcb',
   },
 }
 
@@ -25,8 +24,8 @@ export default defineNuxtPlugin((app) => {
   const vuetify = createVuetify({
     ssr: true,
     theme: {
-      defaultTheme: 'dark',
-      themes: { dark, light },
+      defaultTheme: 'freiburg',
+      themes: { freiburg },
     },
   })
   app.vueApp.use(vuetify)
