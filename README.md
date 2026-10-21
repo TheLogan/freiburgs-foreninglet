@@ -2,19 +2,25 @@
 
 ## About the Project
 
-**Freiburgs Foreninglet Portal** is a self-hosted web portal for the **Freiburgs** LARP club. It provides members with a clean, modern interface to interact with the club's [Foreninglet](https://www.foreninglet.dk) membership management system — without having to navigate the default Foreninglet web UI directly.
+**Freiburgs Foreninglet Portal** shows the **Freiburg** LARP club's upcoming events on the club's Google Site. It is meant to be embedded as a full page there, and its colours and font match that site.
+
+The events live on [Foreninglet](https://www.foreninglet.dk) (`bifrost.foreninglet.dk`), which the national LARP organisation runs and which has no API. Visitors do **not** log in. Instead, the server signs in with a service account that the national organisation created for this purpose, reads the event pages and shows them in a simpler form. Sign-up and payment happen on Foreninglet itself.
 
 ### Features
 
-- **Member login** — authenticate securely using your Foreninglet credentials
-- **Upcoming events** — browse all available club activities and sign-up links
-- **Event subscription** — subscribe to activities and complete payment checkout flows
-- **My events** — view a personalised list of events you are already enrolled in
-- **Profile overview** — see your member information pulled live from Foreninglet
+- **Upcoming events**: the club's events from today onwards, soonest first
+- **Event facts**: date (or date range), location ("Mødested"), price, free places and the sign-up deadline ("Tilmeldingsfrist")
+- **Sign-up hand-off**: the "Tilmeld" button opens the event's page on Foreninglet in a new tab, where members sign up and pay as themselves
+- **Danish interface** styled like the club's Google Site, for desktop and phones
 
 ### How it works
 
-The portal acts as a server-side proxy to the Foreninglet platform (`bifrost.foreninglet.dk`). When you log in, your session cookie is stored server-side and used to fetch and parse data from Foreninglet on your behalf. No credentials are stored persistently.
+1. On startup the server signs in to Foreninglet with `FORENINGLET_USERNAME` and `FORENINGLET_PASSWORD`, and keeps that session in memory.
+2. `GET /api/events/upcoming` submits Foreninglet's activity search (`/memberportal/activity/search`) with today's date as the start date, then loads each event's own page for price, location, free places and deadline.
+3. The result is cached for 5 minutes and shared between all visitors, so normal traffic costs Foreninglet only a handful of requests every few minutes.
+4. If Foreninglet reports the session as expired, the server signs in again and retries once. If signing in fails, it logs the reason, returns "temporarily unavailable" to visitors and waits 60 seconds before trying again, so the account isn't locked out.
+
+> **Keep the credentials secret.** The service account has administrator rights on the club's events in Foreninglet (edit, cancel, delete, see registrations). The app only ever *reads* event pages with it and never forwards visitor input to Foreninglet. Keep it that way.
 
 ### Tech Stack
 
@@ -59,7 +65,10 @@ cd freiburgs-foreninglet
 # 3. Install dependencies
 npm install
 
-# 4. Start the development server
+# 4. Add the Foreninglet credentials (see "Environment Variables")
+cp .env.example .env      # then fill in the username and password
+
+# 5. Start the development server
 npm run dev
 ```
 
@@ -85,7 +94,10 @@ cd freiburgs-foreninglet
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 npm install
 
-# 4. Start the development server
+# 4. Add the Foreninglet credentials (see "Environment Variables")
+Copy-Item .env.example .env   # then fill in the username and password
+
+# 5. Start the development server
 npm run dev
 ```
 
@@ -108,8 +120,10 @@ npm run preview
 The production output is written to `.output/`. Run it directly with:
 
 ```bash
-node .output/server/index.mjs
+node --env-file=.env .output/server/index.mjs
 ```
+
+The production server does not read `.env` by itself. Use `--env-file` as above, or set the variables in the environment.
 
 ---
 
@@ -132,11 +146,12 @@ docker build -t freiburgs-foreninglet:latest .
 docker run -d \
   --name freiburgs-foreninglet \
   -p 3000:3000 \
+  --env-file .env \
   --restart unless-stopped \
   freiburgs-foreninglet:latest
 ```
 
-The portal is now accessible at **http://localhost:3000**.
+The portal is now accessible at **http://localhost:3000**. `.env` is excluded from the image, so the credentials are passed in with `--env-file` when the container starts.
 
 To stop and remove the container:
 
@@ -159,6 +174,7 @@ docker pull ghcr.io/YOUR_GITHUB_USERNAME/freiburgs-foreninglet:latest
 docker run -d \
   --name freiburgs-foreninglet \
   -p 3000:3000 \
+  --env-file .env \
   --restart unless-stopped \
   ghcr.io/YOUR_GITHUB_USERNAME/freiburgs-foreninglet:latest
 ```
@@ -186,6 +202,7 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file: .env          # FORENINGLET_USERNAME and FORENINGLET_PASSWORD
     environment:
       NODE_ENV: production
 ```
@@ -218,10 +235,23 @@ git push origin v1.0.0
 
 ## Environment Variables
 
-The application does not require any mandatory environment variables to run. The following optional variables can be passed to the Docker container to customise behaviour:
+| Variable                | Required | Default      | Description                                        |
+|-------------------------|----------|--------------|----------------------------------------------------|
+| `FORENINGLET_USERNAME`  | **Yes**  |              | Email of the Foreninglet service account           |
+| `FORENINGLET_PASSWORD`  | **Yes**  |              | Password of the Foreninglet service account        |
+| `PORT`                  | No       | `3000`       | Port the HTTP server listens on                    |
+| `HOST`                  | No       | `0.0.0.0`    | Host/interface the server binds to                 |
+| `NODE_ENV`              | No       | `production` | Runtime environment                                |
 
-| Variable    | Default     | Description                              |
-|-------------|-------------|------------------------------------------|
-| `PORT`      | `3000`      | Port the HTTP server listens on          |
-| `HOST`      | `0.0.0.0`   | Host/interface the server binds to       |
-| `NODE_ENV`  | `production`| Runtime environment                      |
+Copy [`.env.example`](.env.example) to `.env` and fill in the two Foreninglet values. `.env` is ignored by git and Docker, so it never ends up in the repository or the image.
+
+If the credentials are missing or wrong, the server logs `[adminSession] Foreninglet login failed: …` at startup and the page shows "Arrangementerne kunne ikke hentes lige nu".
+
+---
+
+## Embedding in the Google Site
+
+1. Deploy the app somewhere reachable over **HTTPS** (Google Sites won't embed plain HTTP).
+2. In the Google Sites editor, add a new page, e.g. "Arrangementer". It appears in the left-hand menu automatically.
+3. On that page choose **Insert → Embed → By URL**, paste the app's address and choose to embed the whole page.
+4. Stretch the embed to the full content width. Google Sites gives embeds a fixed height, so set it to fit the events, e.g. about 700px for 3–4 events.
